@@ -3,9 +3,9 @@ class AppConfig {
   AppConfig._();
 
   static const supabaseUrl =
-      String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+      String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://buykphfcdyjwotzsgprr.supabase.co');
   static const supabaseAnonKey =
-      String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+      String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1eWtwaGZjZHlqd290enNncHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxODIxNzksImV4cCI6MjA3Nzc1ODE3OX0.Y6LbH0Td-h2qfcVPN_BsSD0Ixf7q55fEn1iIkntHHqM');
   static const oauthRedirectUri = String.fromEnvironment(
     'SUPABASE_OAUTH_REDIRECT',
     defaultValue: 'zapnautico://auth-callback',

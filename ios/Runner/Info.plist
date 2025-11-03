@@ -45,5 +45,23 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>zapnautico</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>zapnautico</string>
+			</array>
+		</dict>
+	</array>
+	<key>FlutterDeepLinkURLScheme</key>
+	<string>zapnautico</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>zapnautico</string>
+		<string>google</string>
+	</array>
 </dict>
 </plist>
