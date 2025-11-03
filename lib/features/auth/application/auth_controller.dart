@@ -13,6 +13,7 @@ class AuthController {
     await _client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: AppConfig.oauthRedirectUri,
+      authScreenLaunchMode: LaunchMode.externalApplication,
     );
   }
 
@@ -20,6 +21,7 @@ class AuthController {
     await _client.auth.signInWithOAuth(
       OAuthProvider.apple,
       redirectTo: AppConfig.oauthRedirectUri,
+      authScreenLaunchMode: LaunchMode.externalApplication,
     );
   }
 
@@ -32,4 +34,3 @@ final authControllerProvider = Provider<AuthController>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return AuthController(client);
 });
-
