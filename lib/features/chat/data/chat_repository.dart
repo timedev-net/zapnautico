@@ -426,7 +426,7 @@ class ChatRepository {
           'chat-group-$groupId',
           opts: const RealtimeChannelConfig(
             ack: false,
-            self: false,
+            self: true,
           ),
         ),
       ),
