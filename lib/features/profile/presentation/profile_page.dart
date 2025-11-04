@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/supabase_providers.dart';
 import '../../admin/presentation/admin_user_management_page.dart';
+import '../../marinas/presentation/marina_list_page.dart';
 import '../../user_profiles/providers.dart';
 
 class ProfilePage extends ConsumerWidget {
@@ -132,6 +133,18 @@ class ProfilePage extends ConsumerWidget {
                 },
                 icon: const Icon(Icons.manage_accounts),
                 label: const Text('Gerenciar perfis de usuários'),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MarinaListPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.sailing),
+                label: const Text('Gerenciar marinas'),
               ),
             ],
           ],
