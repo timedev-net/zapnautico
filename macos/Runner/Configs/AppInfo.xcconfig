@@ -5,10 +5,16 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = ZapNáutico
+PRODUCT_NAME = ZapNautico
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.example.zapnautico
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+
+// Force assinatura ad-hoc para builds locais sem equipe configurada
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+PROVISIONING_PROFILE_SPECIFIER =
