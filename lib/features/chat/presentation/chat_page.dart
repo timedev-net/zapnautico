@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +8,7 @@ import '../../../core/supabase_providers.dart';
 import '../../user_profiles/providers.dart';
 import '../domain/chat_group.dart';
 import '../domain/chat_message.dart';
+import '../domain/typing_user.dart';
 import '../providers.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -32,6 +35,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final groupsAsync = ref.watch(chatGroupsProvider);
     final membershipAsync = ref.watch(chatGroupMembershipProvider);
     final isAdmin = ref.watch(isAdminProvider);
+    final currentUser =
+        ref.watch(userProvider) ?? Supabase.instance.client.auth.currentSession?.user;
 
     return groupsAsync.when(
       data: (groups) {
@@ -46,6 +51,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
         final selectedGroup = _resolveSelectedGroup(groups, membership, isAdmin);
         final isMember = isAdmin || membership.contains(selectedGroup.id);
+        final onlineCountAsync = ref.watch(
+          chatGroupOnlineCountProvider(
+            (groupId: selectedGroup.id, trackSelf: isMember),
+          ),
+        );
+        final typingAsync = ref.watch(
+          chatGroupTypingProvider(
+            (
+              groupId: selectedGroup.id,
+              excludeUserId: currentUser?.id,
+            ),
+          ),
+        );
 
         return Column(
           children: [
@@ -64,6 +82,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               child: _GroupInfoBanner(
                 group: selectedGroup,
                 isMember: isMember,
+                onlineCount: onlineCountAsync,
                 onJoin: isMember ? null : () => _joinGroup(selectedGroup.id),
               ),
             ),
@@ -75,7 +94,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 scrollController: _scrollController,
               ),
             ),
+            _TypingIndicator(typing: typingAsync, isMember: isMember),
             _MessageComposer(
+              groupId: selectedGroup.id,
               controller: _messageController,
               enabled: isMember,
               onSend: () => _handleSend(selectedGroup.id),
@@ -217,7 +238,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             content: content,
           );
       _messageController.clear();
-      ref.invalidate(chatMessagesProvider(groupId));
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -285,15 +305,24 @@ class _GroupInfoBanner extends StatelessWidget {
   const _GroupInfoBanner({
     required this.group,
     required this.isMember,
+    required this.onlineCount,
     this.onJoin,
   });
 
   final ChatGroup group;
   final bool isMember;
   final VoidCallback? onJoin;
+  final AsyncValue<int> onlineCount;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onlineText = onlineCount.when(
+      data: (count) => count == 1 ? '1 usuário online' : '$count usuários online',
+      loading: () => 'Carregando usuários...',
+      error: (_, __) => 'Usuários online indisponível',
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -302,12 +331,27 @@ class _GroupInfoBanner extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(group.description!),
           ),
-        if (!isMember && onJoin != null)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.circle, size: 10, color: theme.colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              onlineText,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        if (!isMember && onJoin != null) ...[
+          const SizedBox(height: 12),
           ElevatedButton.icon(
             onPressed: onJoin,
             icon: const Icon(Icons.group_add),
             label: const Text('Ingressar no grupo'),
           ),
+        ],
       ],
     );
   }
@@ -423,7 +467,7 @@ class _MessageBubble extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             MaterialLocalizations.of(context).formatTimeOfDay(
-              TimeOfDay.fromDateTime(message.createdAt),
+              TimeOfDay.fromDateTime(message.createdAt.toLocal()),
               alwaysUse24HourFormat: true,
             ),
             style: theme.textTheme.labelSmall?.copyWith(
@@ -482,16 +526,116 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _MessageComposer extends StatelessWidget {
+class _TypingIndicator extends StatelessWidget {
+  const _TypingIndicator({
+    required this.typing,
+    required this.isMember,
+  });
+
+  final AsyncValue<Set<TypingUser>> typing;
+  final bool isMember;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isMember) {
+      return const SizedBox.shrink();
+    }
+    return typing.when(
+      data: (users) {
+        if (users.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final names = users.map((user) => user.name).toList();
+        final text = names.length == 1
+            ? '${names.first} está digitando...'
+            : '${names.join(', ')} estão digitando...';
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              text,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(fontStyle: FontStyle.italic),
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+class _MessageComposer extends ConsumerStatefulWidget {
   const _MessageComposer({
+    required this.groupId,
     required this.controller,
     required this.enabled,
     required this.onSend,
   });
 
+  final String groupId;
   final TextEditingController controller;
   final bool enabled;
   final Future<void> Function() onSend;
+
+  @override
+  ConsumerState<_MessageComposer> createState() => _MessageComposerState();
+}
+
+class _MessageComposerState extends ConsumerState<_MessageComposer> {
+  Timer? _typingTimer;
+  bool _isTyping = false;
+
+  @override
+  void dispose() {
+    _stopTyping();
+    super.dispose();
+  }
+
+  void _updateTyping(bool value) {
+    if (_isTyping == value) return;
+    _isTyping = value;
+    unawaited(ref.read(chatRepositoryProvider).notifyTyping(
+          groupId: widget.groupId,
+          isTyping: value,
+        ));
+  }
+
+  void _scheduleTypingStop() {
+    _typingTimer?.cancel();
+    _typingTimer = Timer(const Duration(seconds: 2), () {
+      _updateTyping(false);
+    });
+  }
+
+  void _handleChanged(String value) {
+    if (!widget.enabled) return;
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _typingTimer?.cancel();
+      _updateTyping(false);
+      return;
+    }
+    _updateTyping(true);
+    _scheduleTypingStop();
+  }
+
+  void _stopTyping() {
+    _typingTimer?.cancel();
+    _typingTimer = null;
+    _updateTyping(false);
+  }
+
+  Future<void> _handleSend() async {
+    if (!widget.enabled) return;
+    await widget.onSend();
+    _stopTyping();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -503,12 +647,15 @@ class _MessageComposer extends StatelessWidget {
           children: [
             Expanded(
               child: TextField(
-                controller: controller,
+                controller: widget.controller,
                 minLines: 1,
                 maxLines: 4,
-                enabled: enabled,
+                enabled: widget.enabled,
+                onChanged: _handleChanged,
+                onEditingComplete: _stopTyping,
+                onSubmitted: (_) => unawaited(_handleSend()),
                 decoration: InputDecoration(
-                  hintText: enabled
+                  hintText: widget.enabled
                       ? 'Escreva uma mensagem...'
                       : 'Entre no grupo para enviar mensagens',
                 ),
@@ -517,7 +664,8 @@ class _MessageComposer extends StatelessWidget {
             const SizedBox(width: 8),
             IconButton.filled(
               icon: const Icon(Icons.send),
-              onPressed: enabled ? onSend : null,
+              onPressed:
+                  widget.enabled ? () => unawaited(_handleSend()) : null,
             ),
           ],
         ),
