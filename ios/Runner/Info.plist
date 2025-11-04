@@ -5,7 +5,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Zapnautico</string>
+		<string>ZapNáutico</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>zapnautico</string>
+		<string>ZapNáutico</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -56,19 +56,19 @@
 				</array>
 			</dict>
 		</array>
-	<key>FlutterDeepLinkURLScheme</key>
-	<string>zapnautico</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
+		<key>FlutterDeepLinkURLScheme</key>
 		<string>zapnautico</string>
-		<string>google</string>
-	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Precisamos acessar a câmera para fotografar as marinas.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Permitir selecionar fotos das marinas a partir da galeria.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Permitir salvar fotos das marinas.</string>
+		<key>LSApplicationQueriesSchemes</key>
+		<array>
+			<string>zapnautico</string>
+			<string>google</string>
+		</array>
+		<key>NSCameraUsageDescription</key>
+		<string>Precisamos acessar a câmera para fotografar as marinas.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Permitir selecionar fotos das marinas a partir da galeria.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Permitir salvar fotos das marinas.</string>
 		<key>UIStatusBarHidden</key>
 		<false/>
 	</dict>

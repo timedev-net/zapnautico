@@ -78,11 +78,46 @@ class _UserCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primaryContainer,
+                  child: ClipOval(
+                    child: item.user.avatarUrl != null &&
+                            item.user.avatarUrl!.isNotEmpty
+                        ? Image.network(
+                            item.user.avatarUrl!,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                          )
+                        : Center(
+                            child: Text(
+                              _initialsFromDisplayName(
+                                item.user.displayName,
+                                item.user.email,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    item.user.displayName,
-                    style: Theme.of(context).textTheme.titleMedium,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.user.displayName,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (item.user.email != null)
+                        Text(
+                          item.user.email!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -92,12 +127,6 @@ class _UserCard extends ConsumerWidget {
                 ),
               ],
             ),
-            if (item.user.email != null) ...[
-              Text(
-                item.user.email!,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
             const SizedBox(height: 12),
             if (item.profiles.isEmpty)
               const Text('Nenhum perfil atribuído.')
@@ -288,4 +317,18 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+String _initialsFromDisplayName(String displayName, String? email) {
+  final parts = displayName.trim().split(RegExp(r'\s+'));
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  if (parts.isNotEmpty && parts.first.isNotEmpty) {
+    return parts.first.substring(0, 1).toUpperCase();
+  }
+  if (email != null && email.isNotEmpty) {
+    return email.substring(0, 2).toUpperCase();
+  }
+  return '--';
 }

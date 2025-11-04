@@ -53,6 +53,7 @@ class AppUser {
     this.email,
     this.fullName,
     this.phone,
+    this.avatarUrl,
     required this.createdAt,
   });
 
@@ -60,6 +61,7 @@ class AppUser {
   final String? email;
   final String? fullName;
   final String? phone;
+  final String? avatarUrl;
   final DateTime createdAt;
 
   String get displayName => fullName?.isNotEmpty == true
@@ -74,6 +76,7 @@ class AppUser {
       email: data['email'] as String?,
       fullName: data['full_name'] as String?,
       phone: data['phone'] as String?,
+      avatarUrl: data['avatar_url'] as String?,
       createdAt: DateTime.parse(data['created_at'] as String),
     );
   }
@@ -88,4 +91,3 @@ class AppUserWithProfiles {
   final AppUser user;
   final List<UserProfileAssignment> profiles;
 }
-

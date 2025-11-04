@@ -25,7 +25,11 @@ class ProfilePage extends ConsumerWidget {
         }
 
         final metadata = user.userMetadata ?? {};
-        final initials = _getInitials(user.email, metadata['full_name'] as String? ?? metadata['name'] as String?);
+        final avatarUrl = metadata['avatar_url'] as String? ?? user.appMetadata['avatar_url'] as String? ?? user.userMetadata?['picture'] as String?;
+        final initials = _getInitials(
+          user.email,
+          metadata['full_name'] as String? ?? metadata['name'] as String?,
+        );
         final lastSignInRaw = user.lastSignInAt;
         final lastSignInDate = lastSignInRaw != null
             ? DateTime.tryParse(lastSignInRaw)?.toLocal()
@@ -40,11 +44,23 @@ class ProfilePage extends ConsumerWidget {
           padding: const EdgeInsets.all(24),
           children: [
             CircleAvatar(
-              radius: 36,
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: Text(
-                initials,
-                style: Theme.of(context).textTheme.headlineSmall,
+              radius: 40,
+              backgroundColor:
+                  Theme.of(context).colorScheme.primaryContainer,
+              child: ClipOval(
+                child: avatarUrl != null && avatarUrl.isNotEmpty
+                    ? Image.network(
+                        avatarUrl,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      )
+                    : Center(
+                        child: Text(
+                          initials,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 16),
