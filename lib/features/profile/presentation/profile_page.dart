@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/supabase_providers.dart';
+import '../../admin/presentation/admin_user_management_page.dart';
+import '../../user_profiles/providers.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
@@ -9,6 +11,8 @@ class ProfilePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
+    final profilesAsync = ref.watch(currentUserProfilesProvider);
+    final isAdmin = ref.watch(isAdminProvider);
 
     return authState.when(
       data: (session) {
@@ -83,6 +87,53 @@ class ProfilePage extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const Text(
+              'Perfis atribuídos',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            profilesAsync.when(
+              data: (profiles) {
+                if (profiles.isEmpty) {
+                  return const Text(
+                    'Nenhum perfil vinculado. Contate um administrador para solicitar acesso.',
+                  );
+                }
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final profile in profiles)
+                      Chip(
+                        label: Text(profile.profileName),
+                      ),
+                  ],
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stackTrace) => Text(
+                'Erro ao carregar perfis: $error',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+            if (isAdmin) ...[
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminUserManagementPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.manage_accounts),
+                label: const Text('Gerenciar perfis de usuários'),
+              ),
+            ],
           ],
         );
       },
