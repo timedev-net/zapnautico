@@ -14,14 +14,13 @@ for each row execute function public.set_updated_at();
 alter table public.chat_groups enable row level security;
 
 drop policy if exists "Chat groups readable" on public.chat_groups;
-drop policy if exists "Chat groups admin write" on public.chat_groups;
-
 create policy "Chat groups readable"
   on public.chat_groups
   for select
   to authenticated
   using (true);
 
+drop policy if exists "Chat groups admin write" on public.chat_groups;
 create policy "Chat groups admin write"
   on public.chat_groups
   for all
@@ -39,21 +38,20 @@ create table if not exists public.chat_group_members (
 alter table public.chat_group_members enable row level security;
 
 drop policy if exists "Members can view groups" on public.chat_group_members;
-drop policy if exists "Members can join groups" on public.chat_group_members;
-drop policy if exists "Members can leave groups" on public.chat_group_members;
-
 create policy "Members can view groups"
   on public.chat_group_members
   for select
   to authenticated
   using (user_id = auth.uid() or public.is_admin());
 
+drop policy if exists "Members can join groups" on public.chat_group_members;
 create policy "Members can join groups"
   on public.chat_group_members
   for insert
   to authenticated
   with check ((user_id = auth.uid()) or public.is_admin());
 
+drop policy if exists "Members can leave groups" on public.chat_group_members;
 create policy "Members can leave groups"
   on public.chat_group_members
   for delete
@@ -86,9 +84,7 @@ alter table public.chat_messages
 create index if not exists chat_messages_group_created_idx
   on public.chat_messages (group_id, created_at asc);
 
-drop policy if exists "Authenticated users can read chat messages" on public.chat_messages;
-drop policy if exists "Authenticated users can insert chat messages" on public.chat_messages;
-
+drop policy if exists "Members read chat messages" on public.chat_messages;
 create policy "Members read chat messages"
   on public.chat_messages
   for select
@@ -100,6 +96,7 @@ create policy "Members read chat messages"
     )
   );
 
+drop policy if exists "Members insert chat messages" on public.chat_messages;
 create policy "Members insert chat messages"
   on public.chat_messages
   for insert

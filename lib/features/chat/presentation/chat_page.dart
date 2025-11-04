@@ -217,6 +217,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             content: content,
           );
       _messageController.clear();
+      ref.invalidate(chatMessagesProvider(groupId));
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -349,12 +350,14 @@ class _MessagesList extends ConsumerWidget {
           );
         }
 
+        final orderedMessages = messages.toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
         return ListView.builder(
           controller: scrollController,
           padding: const EdgeInsets.all(16),
-          itemCount: messages.length,
+          itemCount: orderedMessages.length,
           itemBuilder: (context, index) {
-            final message = messages[index];
+            final message = orderedMessages[index];
             final isMine = message.senderId == currentUser?.id;
             return _MessageBubble(message: message, isMine: isMine);
           },

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../domain/chat_group.dart';
@@ -28,12 +30,74 @@ class ChatRepository {
   }
 
   Stream<List<ChatMessage>> watchMessages(String groupId) {
-    return _client
-        .from('chat_messages')
-        .stream(primaryKey: ['id'])
-        .eq('group_id', groupId)
-        .order('created_at')
-        .map((rows) => rows.map(ChatMessage.fromMap).toList());
+    final controller = StreamController<List<ChatMessage>>.broadcast();
+    var messages = <ChatMessage>[];
+
+    Future<void> emit() async {
+      if (!controller.isClosed) {
+        messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        controller.add(List.unmodifiable(messages));
+      }
+    }
+
+    Future<void> loadInitial() async {
+      final response = await _client
+          .from('chat_messages')
+          .select()
+          .eq('group_id', groupId)
+          .order('created_at');
+      final data = (response as List).cast<Map<String, dynamic>>();
+      messages = data.map(ChatMessage.fromMap).toList();
+      await emit();
+    }
+
+    final channel = _client.channel('chat-group-$groupId');
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'chat_messages',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'group_id',
+        value: groupId,
+      ),
+      callback: (change) async {
+        switch (change.eventType) {
+          case PostgresChangeEvent.insert:
+            messages.add(ChatMessage.fromMap(change.newRecord));
+            await emit();
+            break;
+          case PostgresChangeEvent.update:
+            final newRecord = change.newRecord;
+            final index = messages.indexWhere((m) => m.id == newRecord['id']?.toString());
+            if (index != -1) {
+              messages[index] = ChatMessage.fromMap(newRecord);
+              await emit();
+            }
+            break;
+          case PostgresChangeEvent.delete:
+            final oldRecord = change.oldRecord;
+            messages.removeWhere((m) => m.id == oldRecord['id']?.toString());
+            await emit();
+            break;
+          default:
+            break;
+        }
+      },
+    );
+
+    controller
+      ..onListen = () async {
+        await loadInitial();
+        channel.subscribe();
+      }
+      ..onCancel = () async {
+        await channel.unsubscribe();
+        _client.removeChannel(channel);
+      };
+
+    return controller.stream;
   }
 
   Future<void> createGroup({
