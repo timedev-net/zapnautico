@@ -1,9 +1,5 @@
 class ProfileType {
-  ProfileType({
-    required this.slug,
-    required this.name,
-    this.description,
-  });
+  ProfileType({required this.slug, required this.name, this.description});
 
   final String slug;
   final String name;
@@ -26,6 +22,8 @@ class UserProfileAssignment {
     required this.profileName,
     this.assignedBy,
     required this.createdAt,
+    this.marinaId,
+    this.marinaName,
   });
 
   final String id;
@@ -34,6 +32,8 @@ class UserProfileAssignment {
   final String profileName;
   final String? assignedBy;
   final DateTime createdAt;
+  final String? marinaId;
+  final String? marinaName;
 
   factory UserProfileAssignment.fromMap(Map<String, dynamic> data) {
     return UserProfileAssignment(
@@ -43,6 +43,8 @@ class UserProfileAssignment {
       profileName: data['profile_name'] as String,
       assignedBy: data['assigned_by']?.toString(),
       createdAt: DateTime.parse(data['created_at'] as String),
+      marinaId: data['marina_id']?.toString(),
+      marinaName: data['marina_name'] as String?,
     );
   }
 }
@@ -67,8 +69,8 @@ class AppUser {
   String get displayName => fullName?.isNotEmpty == true
       ? fullName!
       : email?.isNotEmpty == true
-          ? email!
-          : id;
+      ? email!
+      : id;
 
   factory AppUser.fromMap(Map<String, dynamic> data) {
     return AppUser(
@@ -83,10 +85,7 @@ class AppUser {
 }
 
 class AppUserWithProfiles {
-  AppUserWithProfiles({
-    required this.user,
-    required this.profiles,
-  });
+  AppUserWithProfiles({required this.user, required this.profiles});
 
   final AppUser user;
   final List<UserProfileAssignment> profiles;

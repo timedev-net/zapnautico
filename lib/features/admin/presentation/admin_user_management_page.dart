@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../marinas/domain/marina.dart';
+import '../../marinas/providers.dart';
 import '../../user_profiles/data/user_profile_repository.dart';
 import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
@@ -13,9 +15,7 @@ class AdminUserManagementPage extends ConsumerWidget {
     final usersAsync = ref.watch(adminUsersWithProfilesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gerenciar usuários'),
-      ),
+      appBar: AppBar(title: const Text('Gerenciar usuários')),
       body: usersAsync.when(
         data: (users) {
           if (users.isEmpty) {
@@ -54,6 +54,14 @@ class _UserCard extends ConsumerWidget {
     Future<void> openEditor() async {
       try {
         final profileTypes = await ref.read(profileTypesProvider.future);
+        final marinas = await ref.read(marinasProvider.future);
+        String? initialMarinaId;
+        for (final profile in item.profiles) {
+          if (profile.profileSlug == 'marina' && profile.marinaId != null) {
+            initialMarinaId = profile.marinaId;
+            break;
+          }
+        }
         if (!context.mounted) return;
         await _showEditProfilesSheet(
           context: context,
@@ -61,12 +69,16 @@ class _UserCard extends ConsumerWidget {
           user: item.user,
           availableProfiles: profileTypes,
           initialSelection: item.profiles.map((e) => e.profileSlug).toSet(),
+          marinas: marinas,
+          initialMarinaId: initialMarinaId,
           repository: repository,
         );
       } catch (error) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Não foi possível carregar os perfis: $error')),
+          SnackBar(
+            content: Text('Não foi possível carregar os perfis: $error'),
+          ),
         );
       }
     }
@@ -82,10 +94,12 @@ class _UserCard extends ConsumerWidget {
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.primaryContainer,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer,
                   child: ClipOval(
-                    child: item.user.avatarUrl != null &&
+                    child:
+                        item.user.avatarUrl != null &&
                             item.user.avatarUrl!.isNotEmpty
                         ? Image.network(
                             item.user.avatarUrl!,
@@ -137,7 +151,13 @@ class _UserCard extends ConsumerWidget {
                 children: [
                   for (final profile in item.profiles)
                     Chip(
-                      label: Text(profile.profileName),
+                      label: Text(
+                        profile.profileSlug == 'marina' &&
+                                profile.marinaName != null &&
+                                profile.marinaName!.isNotEmpty
+                            ? '${profile.profileName} - ${profile.marinaName}'
+                            : profile.profileName,
+                      ),
                     ),
                 ],
               ),
@@ -154,9 +174,17 @@ Future<void> _showEditProfilesSheet({
   required AppUser user,
   required Set<String> initialSelection,
   required List<ProfileType> availableProfiles,
+  required List<Marina> marinas,
+  String? initialMarinaId,
   required UserProfileRepository repository,
 }) async {
   final selected = {...initialSelection};
+  var selectedMarinaId = initialMarinaId;
+  if (selectedMarinaId != null &&
+      !marinas.any((marina) => marina.id == selectedMarinaId)) {
+    selectedMarinaId = null;
+  }
+  String? marinaSelectionError;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -180,34 +208,141 @@ Future<void> _showEditProfilesSheet({
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 16),
-                ...availableProfiles.map(
-                  (profile) => CheckboxListTile(
-                    value: selected.contains(profile.slug),
-                    onChanged: (value) {
-                      setState(() {
-                        if (value == true) {
-                          selected.add(profile.slug);
-                        } else {
-                          selected.remove(profile.slug);
-                        }
-                      });
-                    },
-                    title: Text(profile.name),
-                    subtitle: profile.description != null
-                        ? Text(profile.description!)
-                        : null,
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
-                ),
+                ...availableProfiles.map((profile) {
+                  final isSelected = selected.contains(profile.slug);
+                  final isMarinaProfile = profile.slug == 'marina';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CheckboxListTile(
+                        value: isSelected,
+                        onChanged: (value) {
+                          if (value == true &&
+                              isMarinaProfile &&
+                              marinas.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Cadastre uma marina antes de atribuir este perfil.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          setState(() {
+                            if (value == true) {
+                              selected.add(profile.slug);
+                              if (isMarinaProfile) {
+                                marinaSelectionError = null;
+                              }
+                            } else {
+                              selected.remove(profile.slug);
+                              if (isMarinaProfile) {
+                                selectedMarinaId = null;
+                                marinaSelectionError = null;
+                              }
+                            }
+                          });
+                        },
+                        title: Text(profile.name),
+                        subtitle: profile.description != null
+                            ? Text(profile.description!)
+                            : null,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                      if (isMarinaProfile && isSelected && marinas.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            bottom: 8,
+                          ),
+                          child: Text(
+                            'Nenhuma marina cadastrada. Cadastre uma marina antes de atribuir este perfil.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                          ),
+                        ),
+                      if (isMarinaProfile && isSelected && marinas.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            bottom: 8,
+                          ),
+                          child: DropdownButtonFormField<String>(
+                            initialValue: selectedMarinaId,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Selecione a marina',
+                              hintText: 'Escolha a marina responsável',
+                              errorText: marinaSelectionError,
+                            ),
+                            items: [
+                              for (final marina in marinas)
+                                DropdownMenuItem(
+                                  value: marina.id,
+                                  child: Text(marina.name),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                selectedMarinaId = value;
+                                marinaSelectionError = null;
+                              });
+                            },
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                  );
+                }),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () async {
+                      if (selected.contains('marina')) {
+                        if (marinas.isEmpty) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Cadastre uma marina antes de atribuir este perfil.',
+                                ),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+                        if (selectedMarinaId == null) {
+                          setState(() {
+                            marinaSelectionError =
+                                'Selecione uma marina para este perfil.';
+                          });
+                          return;
+                        }
+                      }
+
+                      final payloads = <Map<String, dynamic>>[];
+                      for (final profile in availableProfiles) {
+                        if (selected.contains(profile.slug)) {
+                          final payload = <String, dynamic>{
+                            'slug': profile.slug,
+                          };
+                          if (profile.slug == 'marina') {
+                            payload['marina_id'] = selectedMarinaId;
+                          }
+                          payloads.add(payload);
+                        }
+                      }
+
                       try {
                         await repository.adminSetUserProfiles(
                           userId: user.id,
-                          profileSlugs: selected.toList(),
+                          profilePayloads: payloads,
                         );
                         if (context.mounted) {
                           Navigator.of(context).pop();
@@ -222,7 +357,9 @@ Future<void> _showEditProfilesSheet({
                       } catch (error) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Erro ao salvar perfis: $error')),
+                            SnackBar(
+                              content: Text('Erro ao salvar perfis: $error'),
+                            ),
                           );
                         }
                       }
@@ -274,10 +411,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({
-    required this.error,
-    required this.onRetry,
-  });
+  const _ErrorState({required this.error, required this.onRetry});
 
   final Object error;
   final VoidCallback onRetry;

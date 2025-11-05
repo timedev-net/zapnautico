@@ -19,13 +19,14 @@ class ProfilePage extends ConsumerWidget {
       data: (session) {
         final user = session?.user;
         if (user == null) {
-          return const Center(
-            child: Text('Nenhum usuário autenticado.'),
-          );
+          return const Center(child: Text('Nenhum usuário autenticado.'));
         }
 
         final metadata = user.userMetadata ?? {};
-        final avatarUrl = metadata['avatar_url'] as String? ?? user.appMetadata['avatar_url'] as String? ?? user.userMetadata?['picture'] as String?;
+        final avatarUrl =
+            metadata['avatar_url'] as String? ??
+            user.appMetadata['avatar_url'] as String? ??
+            user.userMetadata?['picture'] as String?;
         final initials = _getInitials(
           user.email,
           metadata['full_name'] as String? ?? metadata['name'] as String?,
@@ -37,7 +38,7 @@ class ProfilePage extends ConsumerWidget {
         final localizations = MaterialLocalizations.of(context);
         final lastSignInText = lastSignInDate != null
             ? '${localizations.formatShortDate(lastSignInDate)} '
-                '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(lastSignInDate), alwaysUse24HourFormat: true)}'
+                  '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(lastSignInDate), alwaysUse24HourFormat: true)}'
             : 'Ainda não acessou.';
 
         return ListView(
@@ -45,8 +46,7 @@ class ProfilePage extends ConsumerWidget {
           children: [
             CircleAvatar(
               radius: 40,
-              backgroundColor:
-                  Theme.of(context).colorScheme.primaryContainer,
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
               child: ClipOval(
                 child: avatarUrl != null && avatarUrl.isNotEmpty
                     ? Image.network(
@@ -123,7 +123,13 @@ class ProfilePage extends ConsumerWidget {
                   children: [
                     for (final profile in profiles)
                       Chip(
-                        label: Text(profile.profileName),
+                        label: Text(
+                          profile.profileSlug == 'marina' &&
+                                  profile.marinaName != null &&
+                                  profile.marinaName!.isNotEmpty
+                              ? '${profile.profileName} - ${profile.marinaName}'
+                              : profile.profileName,
+                        ),
                       ),
                   ],
                 );
@@ -131,10 +137,9 @@ class ProfilePage extends ConsumerWidget {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stackTrace) => Text(
                 'Erro ao carregar perfis: $error',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Theme.of(context).colorScheme.error),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
             ),
             if (isAdmin) ...[
@@ -167,9 +172,8 @@ class ProfilePage extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stackTrace) => Center(
-        child: Text('Erro ao carregar perfil: $error'),
-      ),
+      error: (error, stackTrace) =>
+          Center(child: Text('Erro ao carregar perfil: $error')),
     );
   }
 }
