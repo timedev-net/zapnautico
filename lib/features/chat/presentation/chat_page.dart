@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,16 +19,79 @@ class ChatPage extends ConsumerStatefulWidget {
   ConsumerState<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends ConsumerState<ChatPage> {
+class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  final FocusNode _composerFocusNode = FocusNode();
+  double _lastViewInsetsBottom = 0;
   String? _selectedGroupId;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _composerFocusNode.addListener(_handleComposerFocusChange);
+    _lastViewInsetsBottom = _currentViewInsetsBottom;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _composerFocusNode.removeListener(_handleComposerFocusChange);
+    _composerFocusNode.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final currentBottom = _currentViewInsetsBottom;
+    if (currentBottom > _lastViewInsetsBottom) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _scrollToBottom(animated: true);
+        }
+      });
+    }
+    _lastViewInsetsBottom = currentBottom;
+  }
+
+  void _handleComposerFocusChange() {
+    if (_composerFocusNode.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _scrollToBottom(animated: true);
+        }
+      });
+    }
+  }
+
+  void _scrollToBottom({bool animated = false}) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position.maxScrollExtent;
+    if (animated) {
+      _scrollController.animateTo(
+        position,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _scrollController.jumpTo(position);
+    }
+  }
+
+  double get _currentViewInsetsBottom {
+    final dispatcher = WidgetsBinding.instance.platformDispatcher;
+    ui.FlutterView? view;
+    if (dispatcher.views.isNotEmpty) {
+      view = dispatcher.views.first;
+    } else {
+      view = dispatcher.implicitView;
+    }
+    if (view == null) return 0;
+    return view.viewInsets.bottom / view.devicePixelRatio;
   }
 
   @override
@@ -88,10 +152,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: _MessagesList(
-                groupId: selectedGroup.id,
-                isMember: isMember,
-                scrollController: _scrollController,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => FocusScope.of(context).unfocus(),
+                child: _MessagesList(
+                  groupId: selectedGroup.id,
+                  isMember: isMember,
+                  scrollController: _scrollController,
+                ),
               ),
             ),
             _TypingIndicator(typing: typingAsync, isMember: isMember),
@@ -100,6 +168,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               controller: _messageController,
               enabled: isMember,
               onSend: () => _handleSend(selectedGroup.id),
+              focusNode: _composerFocusNode,
             ),
           ],
         );
@@ -398,6 +467,7 @@ class _MessagesList extends ConsumerWidget {
 
         return ListView.builder(
           controller: scrollController,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(16),
           itemCount: orderedMessages.length,
           itemBuilder: (context, index) {
@@ -576,12 +646,14 @@ class _MessageComposer extends ConsumerStatefulWidget {
     required this.controller,
     required this.enabled,
     required this.onSend,
+    required this.focusNode,
   });
 
   final String groupId;
   final TextEditingController controller;
   final bool enabled;
   final Future<void> Function() onSend;
+  final FocusNode focusNode;
 
   @override
   ConsumerState<_MessageComposer> createState() => _MessageComposerState();
@@ -648,6 +720,7 @@ class _MessageComposerState extends ConsumerState<_MessageComposer> {
             Expanded(
               child: TextField(
                 controller: widget.controller,
+                focusNode: widget.focusNode,
                 minLines: 1,
                 maxLines: 4,
                 enabled: widget.enabled,
