@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -12,16 +13,18 @@ class AuthController {
   Future<void> signInWithGoogle() async {
     await _client.auth.signInWithOAuth(
       OAuthProvider.google,
-      redirectTo: AppConfig.oauthRedirectUri,
-      authScreenLaunchMode: LaunchMode.externalApplication,
+      redirectTo: kIsWeb ? null : AppConfig.oauthRedirectUri,
+      authScreenLaunchMode:
+          kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
     );
   }
 
   Future<void> signInWithApple() async {
     await _client.auth.signInWithOAuth(
       OAuthProvider.apple,
-      redirectTo: AppConfig.oauthRedirectUri,
-      authScreenLaunchMode: LaunchMode.externalApplication,
+      redirectTo: kIsWeb ? null : AppConfig.oauthRedirectUri,
+      authScreenLaunchMode:
+          kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
     );
   }
 

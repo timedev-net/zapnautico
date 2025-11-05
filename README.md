@@ -1,16 +1,35 @@
-# zapnautico
+# ZapNáutico
 
-A new Flutter project.
+Aplicativo Flutter integrado ao Supabase para gerenciamento de cotas náuticas.
 
-## Getting Started
+## Pré-requisitos
 
-This project is a starting point for a Flutter application.
+- Flutter 3.9.2 ou superior
+- Conta no Supabase com URL e Anon Key configuradas em `--dart-define`
 
-A few resources to get you started if this is your first Flutter project:
+## Execução
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Mobile (Android/iOS)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter run
+```
+
+### Web (Chrome)
+
+Use o script dedicado para garantir uma porta fixa e facilitar a autenticação:
+
+```bash
+./tool/run_web.sh
+```
+
+O script exporta `FLUTTER_WEB_PORT=5000` e `FLUTTER_WEB_HOSTNAME=localhost` antes de chamar `flutter run -d chrome`, mantendo a origem estável entre execuções.
+
+## Configuração do Supabase
+
+No dashboard do Supabase, acesse **Authentication → URL Configuration** e adicione:
+
+- `http://localhost:5000` (para desenvolvimento web)
+- `zapnautico://auth-callback` (para Android e iOS)
+
+Esses valores devem corresponder aos parâmetros usados em `lib/core/app_config.dart`.
