@@ -1,3 +1,4 @@
+import 'boat_co_owner.dart';
 import 'boat_enums.dart';
 import 'boat_photo.dart';
 
@@ -22,9 +23,7 @@ class Boat {
     required this.primaryOwnerId,
     this.primaryOwnerName,
     this.primaryOwnerEmail,
-    this.secondaryOwnerId,
-    this.secondaryOwnerName,
-    this.secondaryOwnerEmail,
+    required this.coOwners,
     required this.createdBy,
     required this.createdAt,
     required this.updatedAt,
@@ -50,9 +49,7 @@ class Boat {
   final String primaryOwnerId;
   final String? primaryOwnerName;
   final String? primaryOwnerEmail;
-  final String? secondaryOwnerId;
-  final String? secondaryOwnerName;
-  final String? secondaryOwnerEmail;
+  final List<BoatCoOwner> coOwners;
   final String createdBy;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -64,7 +61,15 @@ class Boat {
     if (userId == null || userId.isEmpty) {
       return false;
     }
-    return userId == primaryOwnerId;
+    if (userId == primaryOwnerId) {
+      return true;
+    }
+    for (final owner in coOwners) {
+      if (owner.userId == userId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   factory Boat.fromMap(Map<String, dynamic> data) {
@@ -87,6 +92,23 @@ class Boat {
         }
       }
       photos.sort((a, b) => a.position.compareTo(b.position));
+    }
+
+    final coOwnerData = data['co_owners'];
+    final coOwners = <BoatCoOwner>[];
+    if (coOwnerData is List) {
+      for (final item in coOwnerData) {
+        if (item is Map<String, dynamic>) {
+          if ((item['user_id']?.toString() ?? '').isEmpty) continue;
+          coOwners.add(BoatCoOwner.fromMap(item));
+        } else if (item is Map) {
+          final mapped = item.map(
+            (key, value) => MapEntry(key.toString(), value),
+          );
+          if ((mapped['user_id']?.toString() ?? '').isEmpty) continue;
+          coOwners.add(BoatCoOwner.fromMap(mapped));
+        }
+      }
     }
 
     return Boat(
@@ -113,9 +135,7 @@ class Boat {
       primaryOwnerId: data['primary_owner_id']?.toString() ?? '',
       primaryOwnerName: data['primary_owner_name'] as String?,
       primaryOwnerEmail: data['primary_owner_email'] as String?,
-      secondaryOwnerId: data['secondary_owner_id']?.toString(),
-      secondaryOwnerName: data['secondary_owner_name'] as String?,
-      secondaryOwnerEmail: data['secondary_owner_email'] as String?,
+      coOwners: coOwners,
       createdBy: data['created_by']?.toString() ?? '',
       createdAt: DateTime.parse(data['created_at'] as String),
       updatedAt: DateTime.parse(data['updated_at'] as String),

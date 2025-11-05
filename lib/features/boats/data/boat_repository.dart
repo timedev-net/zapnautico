@@ -19,11 +19,17 @@ class BoatRepository {
   static const _bucket = 'boat_photos';
   static final _uuid = Uuid();
 
-  Future<List<Boat>> fetchBoats({String? marinaId}) async {
+  Future<List<Boat>> fetchBoats({String? marinaId, String? ownerId}) async {
     var query = _client.from('boats_detailed').select();
 
     if (marinaId != null && marinaId.isNotEmpty) {
       query = query.eq('marina_id', marinaId);
+    }
+
+    if (ownerId != null && ownerId.isNotEmpty) {
+      query = query.or(
+        'primary_owner_id.eq.$ownerId,co_owner_ids.cs.{$ownerId}',
+      );
     }
 
     final response = await query.order('name', ascending: true);
@@ -46,7 +52,7 @@ class BoatRepository {
   }
 
   Future<OwnerSummary?> findOwnerByEmail(String email) async {
-    final normalized = email.trim();
+    final normalized = email.trim().toLowerCase();
     if (normalized.isEmpty) {
       return null;
     }
@@ -90,7 +96,7 @@ class BoatRepository {
     String? description,
     String? trailerPlate,
     String? marinaId,
-    String? secondaryOwnerId,
+    List<String> coOwnerIds = const [],
     List<XFile> newPhotos = const [],
   }) async {
     final userId = _client.auth.currentUser?.id;
@@ -117,7 +123,6 @@ class BoatRepository {
       description: description,
       trailerPlate: trailerPlate,
       marinaId: marinaId,
-      secondaryOwnerId: secondaryOwnerId,
       primaryOwnerId: userId,
       createdBy: userId,
     );
@@ -139,6 +144,8 @@ class BoatRepository {
       photos: newPhotos,
     );
 
+    await _syncCoOwners(boatId: boatId, desiredCoOwners: coOwnerIds);
+
     return boatId;
   }
 
@@ -158,7 +165,7 @@ class BoatRepository {
     String? description,
     String? trailerPlate,
     String? marinaId,
-    String? secondaryOwnerId,
+    List<String> coOwnerIds = const [],
     required List<BoatPhoto> retainedPhotos,
     required List<BoatPhoto> removedPhotos,
     List<XFile> newPhotos = const [],
@@ -182,7 +189,6 @@ class BoatRepository {
       description: description,
       trailerPlate: trailerPlate,
       marinaId: marinaId,
-      secondaryOwnerId: secondaryOwnerId,
     );
 
     await _client.from('boats').update(payload).eq('id', boatId);
@@ -200,6 +206,8 @@ class BoatRepository {
         photos: newPhotos,
       );
     }
+
+    await _syncCoOwners(boatId: boatId, desiredCoOwners: coOwnerIds);
   }
 
   Future<void> deleteBoat(Boat boat) async {
@@ -226,7 +234,6 @@ class BoatRepository {
     String? description,
     String? trailerPlate,
     String? marinaId,
-    String? secondaryOwnerId,
     String? primaryOwnerId,
     String? createdBy,
   }) {
@@ -247,9 +254,6 @@ class BoatRepository {
       'description': description?.isEmpty == true ? null : description,
       'trailer_plate': trailerPlate?.isEmpty == true ? null : trailerPlate,
       'marina_id': marinaId?.isEmpty == true ? null : marinaId,
-      'secondary_owner_id': secondaryOwnerId?.isEmpty == true
-          ? null
-          : secondaryOwnerId,
       if (primaryOwnerId != null) 'primary_owner_id': primaryOwnerId,
       if (createdBy != null) 'created_by': createdBy,
     };
@@ -341,6 +345,57 @@ class BoatRepository {
     }
     if (updates.isNotEmpty) {
       await Future.wait(updates);
+    }
+  }
+
+  Future<void> _syncCoOwners({
+    required String boatId,
+    required List<String> desiredCoOwners,
+  }) async {
+    final cleaned = desiredCoOwners
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final existingResponse = await _client
+        .from('boat_coowners')
+        .select('id,user_id')
+        .eq('boat_id', boatId) as List<dynamic>?;
+
+    final existing = (existingResponse ?? const <dynamic>[])
+        .cast<Map<String, dynamic>>()
+        .map(
+          (row) =>
+              (row['user_id']?.toString() ?? '', row['id']?.toString() ?? ''),
+        )
+        .toList();
+
+    final existingMap = <String, String>{
+      for (final entry in existing)
+        if (entry.$1.isNotEmpty && entry.$2.isNotEmpty) entry.$1: entry.$2,
+    };
+
+    final toAdd = cleaned.difference(existingMap.keys.toSet());
+    final toRemove = existingMap.keys
+        .where((userId) => !cleaned.contains(userId))
+        .map((userId) => existingMap[userId]!)
+        .toList();
+
+    final currentUserId = _client.auth.currentUser?.id;
+
+    if (toAdd.isNotEmpty) {
+      await _client.from('boat_coowners').insert([
+        for (final userId in toAdd)
+          {
+            'boat_id': boatId,
+            'user_id': userId,
+            if (currentUserId != null) 'created_by': currentUserId,
+          },
+      ]);
+    }
+
+    for (final id in toRemove) {
+      await _client.from('boat_coowners').delete().eq('id', id);
     }
   }
 

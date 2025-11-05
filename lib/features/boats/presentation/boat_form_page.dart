@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/supabase_providers.dart';
 import '../../marinas/providers.dart';
 import '../../user_profiles/providers.dart';
 import '../data/boat_repository.dart';
@@ -38,21 +39,21 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
   final _enginePowerController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _trailerPlateController = TextEditingController();
-  final _secondaryOwnerEmailController = TextEditingController();
+  final _coOwnerEmailController = TextEditingController();
 
   late BoatPropulsionType _propulsionType;
   late BoatUsageType _usageType;
   late BoatSize _boatSize;
   String? _selectedMarinaId;
-  OwnerSummary? _secondaryOwner;
-  String? _secondaryOwnerError;
+  final _coOwners = <OwnerSummary>[];
+  String? _coOwnerError;
 
   final _retainedPhotos = <BoatPhoto>[];
   final _originalPhotos = <BoatPhoto>[];
   final _newPhotos = <XFile>[];
 
   bool _isSaving = false;
-  bool _isCheckingOwner = false;
+  bool _isCheckingCoOwner = false;
 
   @override
   void initState() {
@@ -102,13 +103,14 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
     }
 
     _selectedMarinaId = boat.marinaId;
-    if (boat.secondaryOwnerId != null) {
-      _secondaryOwner = OwnerSummary(
-        id: boat.secondaryOwnerId!,
-        email: boat.secondaryOwnerEmail ?? '',
-        fullName: boat.secondaryOwnerName ?? '',
+    for (final coOwner in boat.coOwners) {
+      _coOwners.add(
+        OwnerSummary(
+          id: coOwner.userId,
+          email: coOwner.email ?? '',
+          fullName: coOwner.fullName ?? '',
+        ),
       );
-      _secondaryOwnerEmailController.text = boat.secondaryOwnerEmail ?? '';
     }
 
     _originalPhotos.addAll(boat.photos);
@@ -127,7 +129,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
     _enginePowerController.dispose();
     _descriptionController.dispose();
     _trailerPlateController.dispose();
-    _secondaryOwnerEmailController.dispose();
+    _coOwnerEmailController.dispose();
     super.dispose();
   }
 
@@ -334,7 +336,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
                     maxLines: 4,
                   ),
                   const SizedBox(height: 24),
-                  _buildSecondaryOwnerSection(context),
+                  _buildCoOwnersSection(context),
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: _isSaving ? null : _submit,
@@ -501,25 +503,25 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
     );
   }
 
-  Widget _buildSecondaryOwnerSection(BuildContext context) {
+  Widget _buildCoOwnersSection(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Coproprietário (opcional)',
+          'Coproprietários (opcional)',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
         Text(
-          'Informe o e-mail de um usuário com perfil Proprietário para vinculá-lo como coproprietário.',
+          'Informe o e-mail de um usuário com perfil Proprietário e toque em "Adicionar". É possível vincular vários coproprietários.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
         TextFormField(
-          controller: _secondaryOwnerEmailController,
+          controller: _coOwnerEmailController,
           decoration: InputDecoration(
             labelText: 'E-mail do coproprietário',
-            suffixIcon: _isCheckingOwner
+            suffixIcon: _isCheckingCoOwner
                 ? const Padding(
                     padding: EdgeInsets.all(12),
                     child: SizedBox(
@@ -529,17 +531,16 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
                     ),
                   )
                 : IconButton(
-                    tooltip: 'Limpar e-mail',
+                    tooltip: 'Limpar campo',
                     icon: const Icon(Icons.clear),
                     onPressed: () {
                       setState(() {
-                        _secondaryOwnerEmailController.clear();
-                        _secondaryOwner = null;
-                        _secondaryOwnerError = null;
+                        _coOwnerEmailController.clear();
+                        _coOwnerError = null;
                       });
                     },
                   ),
-            errorText: _secondaryOwnerError,
+            errorText: _coOwnerError,
           ),
           keyboardType: TextInputType.emailAddress,
         ),
@@ -547,22 +548,35 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
         Row(
           children: [
             ElevatedButton.icon(
-              onPressed: _isCheckingOwner ? null : _lookupSecondaryOwner,
+              onPressed: _isCheckingCoOwner ? null : _addCoOwner,
               icon: const Icon(Icons.search),
-              label: const Text('Validar e vincular'),
+              label: const Text('Validar e adicionar'),
             ),
             const SizedBox(width: 12),
-            if (_secondaryOwner != null)
-              Expanded(
-                child: Text(
-                  _secondaryOwner!.fullName.isNotEmpty
-                      ? '${_secondaryOwner!.fullName} (${_secondaryOwner!.email})'
-                      : _secondaryOwner!.email,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
           ],
         ),
+        if (_coOwners.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final owner in _coOwners)
+                Chip(
+                  label: Text(
+                    owner.fullName.isNotEmpty
+                        ? '${owner.fullName} (${owner.email})'
+                        : (owner.email.isNotEmpty ? owner.email : owner.id),
+                  ),
+                  onDeleted: () {
+                    setState(() {
+                      _coOwners.removeWhere((item) => item.id == owner.id);
+                    });
+                  },
+                ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -592,51 +606,69 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
     }
   }
 
-  Future<void> _lookupSecondaryOwner() async {
-    final email = _secondaryOwnerEmailController.text.trim();
+  Future<void> _addCoOwner() async {
+    final email = _coOwnerEmailController.text.trim();
     if (email.isEmpty) {
       setState(() {
-        _secondaryOwner = null;
-        _secondaryOwnerError = null;
+        _coOwnerError = null;
       });
       return;
     }
 
+    final normalizedEmail = email.toLowerCase();
+
     setState(() {
-      _isCheckingOwner = true;
-      _secondaryOwnerError = null;
+      _isCheckingCoOwner = true;
+      _coOwnerError = null;
     });
 
     try {
       final result = await ref
           .read(boatRepositoryProvider)
-          .findOwnerByEmail(email);
+          .findOwnerByEmail(normalizedEmail);
       if (!mounted) return;
 
       if (result == null) {
         setState(() {
-          _secondaryOwner = null;
-          _secondaryOwnerError =
-              'Nenhum proprietário encontrado com este e-mail.';
+          _coOwnerError = 'Nenhum proprietário encontrado com este e-mail.';
+        });
+        return;
+      }
+
+      final primaryOwnerId =
+          widget.boat?.primaryOwnerId ?? ref.read(userProvider)?.id;
+
+      if (primaryOwnerId != null && result.id == primaryOwnerId) {
+        setState(() {
+          _coOwnerError =
+              'O coproprietário deve ser diferente do proprietário principal.';
+        });
+        return;
+      }
+
+      final alreadyAdded = _coOwners.any((owner) => owner.id == result.id);
+      if (alreadyAdded) {
+        setState(() {
+          _coOwnerError = 'Este coproprietário já está vinculado.';
         });
         return;
       }
 
       setState(() {
-        _secondaryOwner = result;
-        _secondaryOwnerError = null;
-        _secondaryOwnerEmailController.text = result.email;
+        _coOwners.add(result);
+        _coOwnerError = null;
+        _coOwnerEmailController.clear();
       });
-      _showMessage('Coproprietário vinculado.');
+      _showMessage('Coproprietário adicionado.');
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _secondaryOwnerError = 'Erro ao validar coproprietário: $error';
+        _coOwnerError = 'Erro ao validar coproprietário: $error';
       });
     } finally {
       if (mounted) {
         setState(() {
-          _isCheckingOwner = false;
+          _isCheckingCoOwner = false;
         });
       }
     }
@@ -672,37 +704,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
     final trailerPlate = _trailerPlateController.text.trim();
     final marinaId = _selectedMarinaId;
 
-    final email = _secondaryOwnerEmailController.text.trim();
-    String? secondaryOwnerId;
-    if (email.isNotEmpty) {
-      if (_secondaryOwner != null &&
-          _secondaryOwner!.email.toLowerCase() == email.toLowerCase()) {
-        secondaryOwnerId = _secondaryOwner!.id;
-      } else {
-        try {
-          final lookup = await repository.findOwnerByEmail(email);
-          if (lookup == null) {
-            _showMessage(
-              'Nenhum proprietário encontrado com o e-mail informado.',
-            );
-            return;
-          }
-          secondaryOwnerId = lookup.id;
-          if (mounted) {
-            setState(() {
-              _secondaryOwner = lookup;
-              _secondaryOwnerError = null;
-              _secondaryOwnerEmailController.text = lookup.email;
-            });
-          }
-        } catch (error) {
-          _showMessage('Erro ao validar coproprietário: $error');
-          return;
-        }
-      }
-    } else {
-      secondaryOwnerId = null;
-    }
+    final coOwnerIds = _coOwners.map((owner) => owner.id).toList();
 
     setState(() {
       _isSaving = true;
@@ -734,7 +736,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
           description: description.isEmpty ? null : description,
           trailerPlate: trailerPlate.isEmpty ? null : trailerPlate,
           marinaId: marinaId,
-          secondaryOwnerId: secondaryOwnerId,
+          coOwnerIds: coOwnerIds,
           retainedPhotos: List.of(_retainedPhotos),
           removedPhotos: removedPhotos,
           newPhotos: List.of(_newPhotos),
@@ -758,7 +760,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
           description: description.isEmpty ? null : description,
           trailerPlate: trailerPlate.isEmpty ? null : trailerPlate,
           marinaId: marinaId,
-          secondaryOwnerId: secondaryOwnerId,
+          coOwnerIds: coOwnerIds,
           newPhotos: List.of(_newPhotos),
         );
       }

@@ -127,14 +127,26 @@ class BoatDetailPage extends ConsumerWidget {
                       ? '${boat.primaryOwnerName} (${boat.primaryOwnerEmail ?? 'sem e-mail'})'
                       : boat.primaryOwnerEmail ?? boat.primaryOwnerId,
                 ),
-                _InfoRow(
-                  label: 'Coproprietário',
-                  value: boat.secondaryOwnerId == null
-                      ? 'Nenhum'
-                      : boat.secondaryOwnerName?.isNotEmpty == true
-                      ? '${boat.secondaryOwnerName} (${boat.secondaryOwnerEmail ?? 'sem e-mail'})'
-                      : boat.secondaryOwnerEmail ?? boat.secondaryOwnerId!,
-                ),
+                if (boat.coOwners.isEmpty)
+                  _InfoRow(label: 'Coproprietários', value: 'Nenhum')
+                else ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Coproprietários',
+                    style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final owner in boat.coOwners)
+                        Chip(label: Text(owner.displayName)),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 24),
                 if (boat.description != null && boat.description!.isNotEmpty)
                   Column(

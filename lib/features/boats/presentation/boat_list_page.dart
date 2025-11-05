@@ -114,6 +114,7 @@ class _BoatCard extends StatelessWidget {
       if (boat.marinaName != null && boat.marinaName!.isNotEmpty)
         'Marina: ${boat.marinaName}',
       'Finalidade: ${boat.usageType.label}',
+      if (boat.coOwners.isNotEmpty) 'Coproprietários: ${boat.coOwners.length}',
     ].join(' • ');
 
     final preview = boat.photos.isNotEmpty ? boat.photos.first : null;
