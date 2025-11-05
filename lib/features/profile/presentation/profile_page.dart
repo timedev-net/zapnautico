@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/supabase_providers.dart';
 import '../../admin/presentation/admin_user_management_page.dart';
+import '../../boats/presentation/boat_list_page.dart';
 import '../../marinas/presentation/marina_list_page.dart';
+import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 
 class ProfilePage extends ConsumerWidget {
@@ -14,6 +16,14 @@ class ProfilePage extends ConsumerWidget {
     final authState = ref.watch(authStateProvider);
     final profilesAsync = ref.watch(currentUserProfilesProvider);
     final isAdmin = ref.watch(isAdminProvider);
+    final profileList =
+        profilesAsync.asData?.value ?? const <UserProfileAssignment>[];
+    final hasProprietario = profileList.any(
+      (profile) => profile.profileSlug == 'proprietario',
+    );
+    final hasMarinaProfile = profileList.any(
+      (profile) => profile.profileSlug == 'marina',
+    );
 
     return authState.when(
       data: (session) {
@@ -142,8 +152,38 @@ class ProfilePage extends ConsumerWidget {
                 ),
               ),
             ),
+            if (!isAdmin && (hasProprietario || hasMarinaProfile)) ...[
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const BoatListPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.directions_boat),
+                label: Text(
+                  hasProprietario
+                      ? 'Minhas embarcações'
+                      : 'Embarcações da minha marina',
+                ),
+              ),
+            ],
             if (isAdmin) ...[
               const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const BoatListPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.directions_boat),
+                label: const Text('Gerenciar embarcações'),
+              ),
+              const SizedBox(height: 12),
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.of(context).push(
