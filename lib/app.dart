@@ -14,8 +14,19 @@ class ZapNauticoApp extends ConsumerWidget {
       title: 'ZapNáutico',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      builder: (context, child) {
+        if (child == null) {
+          return const SizedBox.shrink();
+        }
+        return SafeArea(
+          top: false,
+          left: false,
+          right: false,
+          bottom: true,
+          child: child,
+        );
+      },
       home: const AuthGate(),
     );
   }
 }
-

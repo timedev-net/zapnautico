@@ -189,6 +189,7 @@ Future<void> _showEditProfilesSheet({
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (sheetContext) {
       return Padding(
         padding: EdgeInsets.only(

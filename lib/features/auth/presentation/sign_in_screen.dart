@@ -83,23 +83,10 @@ class SignInScreen extends ConsumerWidget {
                       icon: const Icon(Icons.login),
                       label: const Text('Entrar com Google'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: brandBlue,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () => handleSignIn(controller.signInWithGoogle),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.apple),
-                      label: const Text('Entrar com Apple'),
-                      style: ElevatedButton.styleFrom(
                         backgroundColor: brandTeal,
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: () => handleSignIn(controller.signInWithApple),
+                      onPressed: () => handleSignIn(controller.signInWithGoogle),
                     ),
                   ),
                   const SizedBox(height: 24),
