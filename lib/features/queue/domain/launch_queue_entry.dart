@@ -14,6 +14,7 @@ class LaunchQueueEntry {
     this.genericBoatName,
     this.visibleBoatName,
     this.visibleOwnerName,
+    this.boatPhotoUrl,
     required this.isOwnBoat,
     required this.isMarinaUser,
   });
@@ -32,11 +33,18 @@ class LaunchQueueEntry {
   final int queuePosition;
   final String? visibleBoatName;
   final String? visibleOwnerName;
+  final String? boatPhotoUrl;
   final bool isOwnBoat;
   final bool isMarinaUser;
 
-  bool get isGenericEntry =>
-      boatId.isEmpty && (genericBoatName?.isNotEmpty ?? false);
+  bool get isGenericEntry => boatId.isEmpty;
+
+  bool get hasBoatPhoto => boatPhotoUrl != null && boatPhotoUrl!.isNotEmpty;
+
+  bool get hasMarina => marinaId.isNotEmpty;
+
+  String get displayMarinaName =>
+      hasMarina && marinaName.isNotEmpty ? marinaName : 'Sem marina associada';
 
   bool get userCanSeeDetails => isOwnBoat || isMarinaUser;
 
@@ -52,7 +60,7 @@ class LaunchQueueEntry {
         boatName!.isNotEmpty) {
       return boatName!;
     }
-    return 'Embarcação na fila';
+    return 'Entrada genérica na fila';
   }
 
   factory LaunchQueueEntry.fromMap(Map<String, dynamic> data) {
@@ -71,7 +79,7 @@ class LaunchQueueEntry {
       id: data['id']?.toString() ?? '',
       boatId: boatId,
       marinaId: data['marina_id']?.toString() ?? '',
-      marinaName: data['marina_name'] as String? ?? 'Marina',
+      marinaName: (data['marina_name'] as String?)?.trim() ?? '',
       requestedBy: data['requested_by']?.toString() ?? '',
       requestedByName: data['requested_by_name'] as String? ?? '',
       requestedByEmail: data['requested_by_email'] as String?,
@@ -82,6 +90,7 @@ class LaunchQueueEntry {
       genericBoatName: data['generic_boat_name'] as String?,
       visibleBoatName: data['visible_boat_name'] as String?,
       visibleOwnerName: data['visible_owner_name'] as String?,
+      boatPhotoUrl: data['boat_photo_url'] as String?,
       isOwnBoat: _parseBool(data['is_own_boat']),
       isMarinaUser: _parseBool(data['is_marina_user']),
     );

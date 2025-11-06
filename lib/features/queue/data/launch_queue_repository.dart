@@ -9,37 +9,54 @@ class LaunchQueueRepository {
 
   final SupabaseClient _client;
 
-  Future<List<LaunchQueueEntry>> fetchQueue({required String marinaId}) async {
+  Future<List<LaunchQueueEntry>> fetchEntries() async {
     final response = await _client
         .from('boat_launch_queue_view')
         .select()
-        .eq('marina_id', marinaId)
         .order('queue_position', ascending: true);
 
     final data = (response as List).cast<Map<String, dynamic>>();
     return data.map(LaunchQueueEntry.fromMap).toList();
   }
 
-  Future<void> enqueueBoat({
-    required String boatId,
-    required String marinaId,
+  Future<void> createEntry({
+    String? marinaId,
+    String? boatId,
+    String? genericBoatName,
+    String status = 'pending',
   }) async {
-    await _client.from('boat_launch_queue').insert({
-      'boat_id': boatId,
-      'marina_id': marinaId,
-    });
-  }
+    final normalizedGenericName = genericBoatName?.trim();
 
-  Future<void> enqueueGenericEntry({
-    required String marinaId,
-    String? label,
-  }) async {
-    await _client.from('boat_launch_queue').insert({
-      'marina_id': marinaId,
-      'generic_boat_name': (label?.trim().isNotEmpty ?? false)
-          ? label!.trim()
-          : 'Embarcação aguardando descida',
-    });
+    final hasBoat = boatId != null && boatId.isNotEmpty;
+    final hasGenericName = normalizedGenericName != null &&
+        normalizedGenericName.isNotEmpty;
+    if (!hasBoat && !hasGenericName) {
+      throw ArgumentError(
+        'Informe uma embarcação ou uma descrição para a fila.',
+      );
+    }
+
+    final payload = <String, dynamic>{
+      'status': status,
+    };
+
+    if (marinaId != null && marinaId.isNotEmpty) {
+      payload['marina_id'] = marinaId;
+    }
+
+    if (status != 'pending') {
+      payload['processed_at'] = DateTime.now().toUtc().toIso8601String();
+    }
+
+    if (hasBoat) {
+      payload['boat_id'] = boatId;
+    }
+
+    if (hasGenericName) {
+      payload['generic_boat_name'] = normalizedGenericName;
+    }
+
+    await _client.from('boat_launch_queue').insert(payload);
   }
 
   Future<void> cancelRequest(String entryId) async {
@@ -48,11 +65,24 @@ class LaunchQueueRepository {
 
   Future<void> updateEntry({
     required String entryId,
+    String? marinaId,
+    String? boatId,
     String? status,
     DateTime? processedAt,
+    bool clearProcessedAt = false,
     String? genericBoatName,
   }) async {
     final updatePayload = <String, dynamic>{};
+
+    if (marinaId != null && marinaId.isNotEmpty) {
+      updatePayload['marina_id'] = marinaId;
+    } else if (marinaId != null && marinaId.isEmpty) {
+      updatePayload['marina_id'] = null;
+    }
+
+    if (boatId != null) {
+      updatePayload['boat_id'] = boatId.isEmpty ? null : boatId;
+    }
 
     if (status != null) {
       updatePayload['status'] = status;
@@ -60,10 +90,14 @@ class LaunchQueueRepository {
 
     if (processedAt != null) {
       updatePayload['processed_at'] = processedAt.toUtc().toIso8601String();
+    } else if (clearProcessedAt) {
+      updatePayload['processed_at'] = null;
     }
 
     if (genericBoatName != null) {
-      updatePayload['generic_boat_name'] = genericBoatName.trim();
+      final normalized = genericBoatName.trim();
+      updatePayload['generic_boat_name'] =
+          normalized.isEmpty ? null : normalized;
     }
 
     if (updatePayload.isEmpty) {
@@ -74,20 +108,6 @@ class LaunchQueueRepository {
         .from('boat_launch_queue')
         .update(updatePayload)
         .eq('id', entryId);
-  }
-
-  Future<void> notifyMarinaLaunchRequest({
-    required String marinaId,
-    required String boatId,
-  }) async {
-    try {
-      await _client.functions.invoke(
-        'notify_marina_launch_request',
-        body: {'marina_id': marinaId, 'boat_id': boatId},
-      );
-    } catch (_) {
-      // Ignora falhas de notificação para não interromper o fluxo principal.
-    }
   }
 }
 
