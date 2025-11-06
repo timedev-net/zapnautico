@@ -24,8 +24,10 @@ class BoatListPage extends ConsumerWidget {
     final isAdmin = profileInfo.any(
       (profile) => profile.profileSlug == 'administrador',
     );
-    final isProprietario = profileInfo.any(
-      (profile) => profile.profileSlug == 'proprietario',
+    final hasOwnerProfile = profileInfo.any(
+      (profile) =>
+          profile.profileSlug == 'proprietario' ||
+          profile.profileSlug == 'cotista',
     );
 
     return Scaffold(
@@ -33,12 +35,12 @@ class BoatListPage extends ConsumerWidget {
         title: Text(
           isAdmin
               ? 'Embarcações cadastradas'
-              : isProprietario
-              ? 'Minhas embarcações'
-              : 'Embarcações',
+              : hasOwnerProfile
+                  ? 'Minhas embarcações'
+                  : 'Embarcações',
         ),
       ),
-      floatingActionButton: isProprietario
+      floatingActionButton: hasOwnerProfile
           ? FloatingActionButton.extended(
               onPressed: () async {
                 await Navigator.of(context).push(
@@ -55,7 +57,7 @@ class BoatListPage extends ConsumerWidget {
           if (boats.isEmpty) {
             return _EmptyState(
               isAdmin: isAdmin,
-              isProprietario: isProprietario,
+              hasOwnerProfile: hasOwnerProfile,
             );
           }
 
@@ -172,24 +174,24 @@ class _BoatCard extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.isAdmin, required this.isProprietario});
+  const _EmptyState({required this.isAdmin, required this.hasOwnerProfile});
 
   final bool isAdmin;
-  final bool isProprietario;
+  final bool hasOwnerProfile;
 
   @override
   Widget build(BuildContext context) {
     final title = isAdmin
         ? 'Nenhuma embarcação cadastrada.'
-        : isProprietario
-        ? 'Você ainda não cadastrou embarcações.'
-        : 'Nenhuma embarcação disponível.';
+        : hasOwnerProfile
+            ? 'Você ainda não cadastrou embarcações.'
+            : 'Nenhuma embarcação disponível.';
 
     final description = isAdmin
         ? 'Cadastre novas embarcações para acompanhar o inventário.'
-        : isProprietario
-        ? 'Utilize o botão acima para registrar sua embarcação.'
-        : 'Assim que forem vinculadas embarcações você poderá visualizá-las aqui.';
+        : hasOwnerProfile
+            ? 'Utilize o botão acima para registrar sua embarcação.'
+            : 'Assim que forem vinculadas embarcações você poderá visualizá-las aqui.';
 
     return Center(
       child: Padding(

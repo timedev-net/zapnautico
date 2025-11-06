@@ -18,8 +18,10 @@ class ProfilePage extends ConsumerWidget {
     final isAdmin = ref.watch(isAdminProvider);
     final profileList =
         profilesAsync.asData?.value ?? const <UserProfileAssignment>[];
-    final hasProprietario = profileList.any(
-      (profile) => profile.profileSlug == 'proprietario',
+    final hasOwnerProfile = profileList.any(
+      (profile) =>
+          profile.profileSlug == 'proprietario' ||
+          profile.profileSlug == 'cotista',
     );
     final hasMarinaProfile = profileList.any(
       (profile) => profile.profileSlug == 'marina',
@@ -152,7 +154,7 @@ class ProfilePage extends ConsumerWidget {
                 ),
               ),
             ),
-            if (!isAdmin && (hasProprietario || hasMarinaProfile)) ...[
+            if (!isAdmin && (hasOwnerProfile || hasMarinaProfile)) ...[
               const SizedBox(height: 32),
               ElevatedButton.icon(
                 onPressed: () {
@@ -164,7 +166,7 @@ class ProfilePage extends ConsumerWidget {
                 },
                 icon: const Icon(Icons.directions_boat),
                 label: Text(
-                  hasProprietario
+                  hasOwnerProfile
                       ? 'Minhas embarcações'
                       : 'Embarcações da minha marina',
                 ),

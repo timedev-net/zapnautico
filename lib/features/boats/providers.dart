@@ -32,10 +32,12 @@ final boatsProvider = FutureProvider<List<Boat>>((ref) async {
   }
 
   String? ownerId;
-  final hasProprietario = profiles.any(
-    (profile) => profile.profileSlug == 'proprietario',
+  final hasOwnerProfile = profiles.any(
+    (profile) =>
+        profile.profileSlug == 'proprietario' ||
+        profile.profileSlug == 'cotista',
   );
-  if (!isAdmin && marinaId == null && hasProprietario && user != null) {
+  if (!isAdmin && marinaId == null && hasOwnerProfile && user != null) {
     ownerId = user.id;
   }
 

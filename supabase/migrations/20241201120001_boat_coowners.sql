@@ -46,6 +46,42 @@ begin
 
   alter table public.boat_coowners enable row level security;
 
+  drop function if exists public.can_manage_boat(uuid, uuid);
+
+  create or replace function public.can_manage_boat(
+    boat_id_input uuid,
+    user_id_input uuid default auth.uid()
+  )
+  returns boolean
+  language plpgsql
+  stable
+  security definer
+  set search_path = public
+  as $func$
+  declare
+    target_user uuid := coalesce(user_id_input, auth.uid());
+  begin
+    if boat_id_input is null or target_user is null then
+      return false;
+    end if;
+
+    return exists(
+      select 1
+      from public.boats b
+      left join public.boat_coowners co
+        on co.boat_id = b.id
+        and co.user_id = target_user
+      where b.id = boat_id_input
+        and (
+          public.is_admin(target_user)
+          or b.primary_owner_id = target_user
+          or b.created_by = target_user
+          or co.user_id is not null
+        )
+    );
+  end;
+  $func$;
+
   create policy "Visualizar coproprietarios autorizados"
     on public.boat_coowners
     for select
@@ -81,40 +117,6 @@ begin
           and b.primary_owner_id = auth.uid()
       )
     );
-
-  create or replace function public.can_manage_boat(
-    boat_id_input uuid,
-    user_id_input uuid default auth.uid()
-  )
-  returns boolean
-  language plpgsql
-  stable
-  security definer
-  set search_path = public
-  as $func$
-  declare
-    target_user uuid := coalesce(user_id_input, auth.uid());
-  begin
-    if boat_id_input is null or target_user is null then
-      return false;
-    end if;
-
-    return exists(
-      select 1
-      from public.boats b
-      left join public.boat_coowners co
-        on co.boat_id = b.id
-        and co.user_id = target_user
-      where b.id = boat_id_input
-        and (
-          public.is_admin(target_user)
-          or b.primary_owner_id = target_user
-          or b.created_by = target_user
-          or co.user_id is not null
-        )
-    );
-  end;
-  $func$;
 
   create policy "Proprietarios veem embarcacoes vinculadas"
     on public.boats

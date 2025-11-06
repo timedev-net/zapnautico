@@ -5,7 +5,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../chat/presentation/chat_page.dart';
 import '../../marketplace/presentation/marketplace_page.dart';
 import '../../profile/presentation/profile_page.dart';
-import '../../quotas/presentation/quotas_page.dart';
+import 'home_page.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -21,9 +21,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget build(BuildContext context) {
     final pages = [
       const _HomePageConfig(
-        title: 'Cotas',
-        icon: Icons.assignment,
-        body: QuotasPage(),
+        title: 'Início',
+        icon: Icons.home,
+        body: HomePage(),
       ),
       const _HomePageConfig(
         title: 'Marketplace',
@@ -66,10 +66,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         },
         destinations: [
           for (final page in pages)
-            NavigationDestination(
-              icon: Icon(page.icon),
-              label: page.title,
-            ),
+            NavigationDestination(icon: Icon(page.icon), label: page.title),
         ],
       ),
     );

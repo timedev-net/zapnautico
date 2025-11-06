@@ -32,6 +32,11 @@ $$;
 
 alter table public.boat_coowners enable row level security;
 
+-- Recria policies relacionadas às embarcações e fotos
+
+drop policy if exists "Proprietarios veem embarcacoes vinculadas" on public.boats;
+drop function if exists public.can_manage_boat(uuid, uuid);
+
 create or replace function public.can_manage_boat(
   boat_id_input uuid,
   user_id_input uuid default auth.uid()
@@ -65,10 +70,6 @@ begin
   );
 end;
 $func$;
-
--- Recria policies relacionadas às embarcações e fotos
-
-drop policy if exists "Proprietarios veem embarcacoes vinculadas" on public.boats;
 create policy "Proprietarios veem embarcacoes vinculadas"
   on public.boats
   for select
