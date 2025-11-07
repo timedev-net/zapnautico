@@ -1,1 +1,0 @@
--- superseded by later migrations adding avatar support
