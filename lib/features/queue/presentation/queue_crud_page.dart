@@ -506,37 +506,31 @@ class _QueueMarinaFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <DropdownMenuItem<String?>>[
-      const DropdownMenuItem<String?>(
-        value: null,
-        child: Text('Todas as marinas'),
-      ),
-      const DropdownMenuItem<String?>(
-        value: queueNoMarinaFilterValue,
-        child: Text('Sem marina'),
-      ),
-      ...marinas.map(
-        (marina) => DropdownMenuItem<String?>(
-          value: marina.id,
-          child: Text(marina.name),
-        ),
-      ),
-    ];
-
-    return InputDecorator(
+    return DropdownButtonFormField<String?>(
+      initialValue: selectedMarinaId,
       decoration: const InputDecoration(
         labelText: 'Filtrar por marina',
         border: OutlineInputBorder(),
       ),
-      isEmpty: selectedMarinaId == null,
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String?>(
-          value: selectedMarinaId,
-          isExpanded: true,
-          items: items,
-          onChanged: onChanged,
+      hint: const Text('Selecione uma opção'),
+      isExpanded: true,
+      items: [
+        const DropdownMenuItem<String?>(
+          value: null,
+          child: Text('Todas as marinas'),
         ),
-      ),
+        const DropdownMenuItem<String?>(
+          value: queueNoMarinaFilterValue,
+          child: Text('Sem marina'),
+        ),
+        ...marinas.map(
+          (marina) => DropdownMenuItem<String?>(
+            value: marina.id,
+            child: Text(marina.name),
+          ),
+        ),
+      ],
+      onChanged: onChanged,
     );
   }
 }
@@ -613,126 +607,87 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              FormField<String?>(
+              DropdownButtonFormField<String?>(
                 initialValue: _selectedMarinaId,
-                builder: (field) {
-                  final items = <DropdownMenuItem<String?>>[
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Sem marina vinculada'),
+                decoration: const InputDecoration(
+                  labelText: 'Marina',
+                  border: OutlineInputBorder(),
+                ),
+                hint: const Text('Selecione uma marina'),
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Sem marina vinculada'),
+                  ),
+                  ...widget.marinas.map(
+                    (marina) => DropdownMenuItem<String?>(
+                      value: marina.id,
+                      child: Text(marina.name),
                     ),
-                    ...widget.marinas.map(
-                      (marina) => DropdownMenuItem<String?>(
-                        value: marina.id,
-                        child: Text(marina.name),
-                      ),
-                    ),
-                  ];
-
-                  return InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: 'Marina',
-                      border: const OutlineInputBorder(),
-                    ),
-                    isEmpty: field.value == null || field.value!.isEmpty,
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        value: field.value,
-                        isExpanded: true,
-                        items: items,
-                        onChanged: (value) {
-                          field.didChange(value);
-                          setState(() {
-                            _selectedMarinaId = value;
-                            if (!_boatBelongsToSelectedMarina(_selectedBoatId)) {
-                              _selectedBoatId = null;
-                              _boatFieldKey.currentState?.didChange(null);
-                            }
-                          });
-                          _formKey.currentState?.validate();
-                        },
-                      ),
-                    ),
-                  );
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedMarinaId = value;
+                    if (!_boatBelongsToSelectedMarina(_selectedBoatId)) {
+                      _selectedBoatId = null;
+                      _boatFieldKey.currentState?.didChange(null);
+                    }
+                  });
+                  _formKey.currentState?.validate();
                 },
               ),
               const SizedBox(height: 12),
-              FormField<String?>(
+              DropdownButtonFormField<String?>(
                 key: _boatFieldKey,
                 initialValue: _selectedBoatId,
-                builder: (field) {
-                  final items = <DropdownMenuItem<String?>>[
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Sem embarcação vinculada'),
+                decoration: const InputDecoration(
+                  labelText: 'Embarcação',
+                  border: OutlineInputBorder(),
+                ),
+                hint: const Text('Selecione uma embarcação'),
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Sem embarcação vinculada'),
+                  ),
+                  ...boats.map(
+                    (boat) => DropdownMenuItem<String?>(
+                      value: boat.id,
+                      child: Text(boat.name),
                     ),
-                    ...boats.map(
-                      (boat) => DropdownMenuItem<String?>(
-                        value: boat.id,
-                        child: Text(boat.name),
-                      ),
-                    ),
-                  ];
-
-                  return InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: 'Embarcação',
-                      border: const OutlineInputBorder(),
-                      errorText: field.errorText,
-                    ),
-                    isEmpty: field.value == null || field.value!.isEmpty,
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        value: field.value,
-                        isExpanded: true,
-                        items: items,
-                        onChanged: (value) {
-                          field.didChange(value);
-                          setState(() {
-                            _selectedBoatId = value;
-                          });
-                          _formKey.currentState?.validate();
-                        },
-                      ),
-                    ),
-                  );
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedBoatId = value;
+                  });
+                  _formKey.currentState?.validate();
                 },
               ),
               const SizedBox(height: 12),
-              FormField<String>(
+              DropdownButtonFormField<String>(
                 initialValue: _selectedStatus,
-                builder: (field) {
-                  final items = _statusOptions
-                      .map(
-                        (option) => DropdownMenuItem<String>(
-                          value: option.value,
-                          child: Text(option.label),
-                        ),
-                      )
-                      .toList();
-
-                  return InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: 'Status',
-                      border: const OutlineInputBorder(),
-                      errorText: field.errorText,
-                    ),
-                    isEmpty: (field.value ?? '').isEmpty,
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: field.value,
-                        isExpanded: true,
-                        items: items,
-                        onChanged: (value) {
-                          if (value == null) return;
-                          field.didChange(value);
-                          setState(() {
-                            _selectedStatus = value;
-                          });
-                        },
+                decoration: const InputDecoration(
+                  labelText: 'Status',
+                  border: OutlineInputBorder(),
+                ),
+                isExpanded: true,
+                items: _statusOptions
+                    .map(
+                      (option) => DropdownMenuItem<String>(
+                        value: option.value,
+                        child: Text(option.label),
                       ),
-                    ),
-                  );
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedStatus = value;
+                  });
                 },
               ),
               const SizedBox(height: 12),
