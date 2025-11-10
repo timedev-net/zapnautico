@@ -35,6 +35,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
 	<key>FlutterDeepLinkURLScheme</key>
 	<string>zapnautico</string>
 	<key>LSApplicationQueriesSchemes</key>
@@ -52,6 +54,10 @@
 	<string>Permitir selecionar fotos das marinas a partir da galeria.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
