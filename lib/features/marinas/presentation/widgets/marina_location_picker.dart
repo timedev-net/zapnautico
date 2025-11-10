@@ -59,7 +59,7 @@ class _MarinaLocationPickerState extends State<MarinaLocationPicker> {
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.zapnautico',
+                  userAgentPackageName: 'br.frota.zapnautico',
                 ),
                 if (_selected != null)
                   MarkerLayer(

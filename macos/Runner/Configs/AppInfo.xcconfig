@@ -8,10 +8,10 @@
 PRODUCT_NAME = ZapNautico
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.zapnautico
+PRODUCT_BUNDLE_IDENTIFIER = br.frota.zapnautico
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 ZapNáutico. All rights reserved.
 
 // Force assinatura ad-hoc para builds locais sem equipe configurada
 CODE_SIGN_STYLE = Manual

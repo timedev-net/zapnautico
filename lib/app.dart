@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/push_notifications/push_token_registrar.dart';
+import 'core/supabase_providers.dart';
 import 'core/theme.dart';
 import 'features/auth/presentation/auth_gate.dart';
 
@@ -10,6 +13,16 @@ class ZapNauticoApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<Session?>>(
+      authStateProvider,
+      (_, next) {
+        next.whenData(
+          (session) =>
+              ref.read(pushTokenRegistrarProvider).handleSession(session),
+        );
+      },
+    );
+
     return MaterialApp(
       title: 'ZapNáutico',
       debugShowCheckedModeBanner: false,

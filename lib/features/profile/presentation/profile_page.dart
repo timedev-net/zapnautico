@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/supabase_providers.dart';
+import '../../admin/presentation/admin_push_notification_page.dart';
 import '../../admin/presentation/admin_user_management_page.dart';
 import '../../boats/presentation/boat_list_page.dart';
 import '../../marinas/presentation/marina_list_page.dart';
@@ -208,6 +209,18 @@ class ProfilePage extends ConsumerWidget {
                 },
                 icon: const Icon(Icons.sailing),
                 label: const Text('Gerenciar marinas'),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminPushNotificationPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.notifications_active_outlined),
+                label: const Text('Enviar push para todos'),
               ),
             ],
           ],

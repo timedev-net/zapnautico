@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "784210811735",
+    "project_id": "appzapnautico",
+    "storage_bucket": "appzapnautico.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:784210811735:android:e6fb17e8e46770c55fbc12",
+        "android_client_info": {
+          "package_name": "br.frota.zapnautico"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHTo6dwrHWefQpR3GmTdGCsnq5YNaNh7Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

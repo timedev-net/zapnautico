@@ -1,4 +1,4 @@
-package com.example.zapnautico
+package br.frota.zapnautico
 
 import io.flutter.embedding.android.FlutterActivity
 

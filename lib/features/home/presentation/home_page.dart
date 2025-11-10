@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../financial/presentation/financial_management_page.dart';
 import '../../queue/presentation/queue_crud_page.dart';
+import '../../user_profiles/providers.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -9,6 +11,15 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final profilesAsync = ref.watch(currentUserProfilesProvider);
+    final canAccessFinancial = profilesAsync.maybeWhen(
+      data: (profiles) => profiles.any(
+        (profile) =>
+            profile.profileSlug == 'proprietario' ||
+            profile.profileSlug == 'cotista',
+      ),
+      orElse: () => false,
+    );
 
     return Center(
       child: SingleChildScrollView(
@@ -35,6 +46,18 @@ class HomePage extends ConsumerWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
+            if (canAccessFinancial) ...[
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const FinancialManagementPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.receipt_long),
+                label: const Text('Gestão financeira'),
+              ),
+              const SizedBox(height: 12),
+            ],
             FilledButton.icon(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
