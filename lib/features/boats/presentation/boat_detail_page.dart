@@ -74,6 +74,10 @@ class BoatDetailPage extends ConsumerWidget {
                 _SectionTitle('Informações gerais'),
                 const SizedBox(height: 12),
                 _InfoRow(
+                  label: 'Tipo de embarcação',
+                  value: boat.boatType.label,
+                ),
+                _InfoRow(
                   label: 'Número de inscrição',
                   value: boat.registrationNumber ?? 'Não informado',
                 ),

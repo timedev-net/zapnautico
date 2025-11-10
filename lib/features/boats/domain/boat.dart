@@ -6,6 +6,7 @@ class Boat {
   Boat({
     required this.id,
     required this.name,
+    required this.boatType,
     this.registrationNumber,
     required this.fabricationYear,
     required this.propulsionType,
@@ -32,6 +33,7 @@ class Boat {
 
   final String id;
   final String name;
+  final BoatType boatType;
   final String? registrationNumber;
   final int fabricationYear;
   final BoatPropulsionType propulsionType;
@@ -73,6 +75,7 @@ class Boat {
   }
 
   factory Boat.fromMap(Map<String, dynamic> data) {
+    final boatTypeValue = data['boat_type'] as String?;
     final propulsionValue = data['propulsion_type'] as String?;
     final usageValue = data['usage_type'] as String?;
     final sizeValue = data['boat_size'] as String?;
@@ -114,6 +117,7 @@ class Boat {
     return Boat(
       id: data['id']?.toString() ?? '',
       name: data['name'] as String? ?? 'Embarcação',
+      boatType: BoatType.fromValue(boatTypeValue),
       registrationNumber: data['registration_number'] as String?,
       fabricationYear: (data['fabrication_year'] as num?)?.toInt() ?? 0,
       propulsionType: BoatPropulsionType.fromValue(propulsionValue),

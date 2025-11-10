@@ -1,3 +1,26 @@
+enum BoatType {
+  lancha('lancha', 'Lancha'),
+  jetSki('jet_ski', 'Jet ski / moto aquática'),
+  barcoPesca('barco_pesca', 'Barco de pesca'),
+  bote('bote', 'Bote'),
+  iate('iate', 'Iate'),
+  veleiro('veleiro', 'Veleiro');
+
+  const BoatType(this.value, this.label);
+
+  final String value;
+  final String label;
+
+  static BoatType fromValue(String? value) {
+    for (final type in BoatType.values) {
+      if (type.value == value) {
+        return type;
+      }
+    }
+    return BoatType.lancha;
+  }
+}
+
 enum BoatPropulsionType {
   vela('vela', 'À vela'),
   remo('remo', 'A remo'),

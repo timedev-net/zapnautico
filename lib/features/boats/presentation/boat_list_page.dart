@@ -110,6 +110,7 @@ class _BoatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitle = <String>[
+      'Tipo: ${boat.boatType.label}',
       if (boat.registrationNumber != null &&
           boat.registrationNumber!.isNotEmpty)
         'Inscrição: ${boat.registrationNumber}',

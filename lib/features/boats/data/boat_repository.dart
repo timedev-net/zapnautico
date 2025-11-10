@@ -83,6 +83,7 @@ class BoatRepository {
 
   Future<String> createBoat({
     required String name,
+    required BoatType boatType,
     String? registrationNumber,
     required int fabricationYear,
     required BoatPropulsionType propulsionType,
@@ -110,6 +111,7 @@ class BoatRepository {
 
     final payload = _serializeBoatPayload(
       name: name,
+      boatType: boatType,
       registrationNumber: registrationNumber,
       fabricationYear: fabricationYear,
       propulsionType: propulsionType,
@@ -152,6 +154,7 @@ class BoatRepository {
   Future<void> updateBoat({
     required String boatId,
     required String name,
+    required BoatType boatType,
     String? registrationNumber,
     required int fabricationYear,
     required BoatPropulsionType propulsionType,
@@ -176,6 +179,7 @@ class BoatRepository {
 
     final payload = _serializeBoatPayload(
       name: name,
+      boatType: boatType,
       registrationNumber: registrationNumber,
       fabricationYear: fabricationYear,
       propulsionType: propulsionType,
@@ -221,6 +225,7 @@ class BoatRepository {
 
   Map<String, dynamic> _serializeBoatPayload({
     required String name,
+    required BoatType boatType,
     String? registrationNumber,
     required int fabricationYear,
     required BoatPropulsionType propulsionType,
@@ -239,6 +244,7 @@ class BoatRepository {
   }) {
     return {
       'name': name,
+      'boat_type': boatType.value,
       'registration_number': registrationNumber?.isEmpty == true
           ? null
           : registrationNumber,

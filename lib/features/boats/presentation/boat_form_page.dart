@@ -41,6 +41,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
   final _trailerPlateController = TextEditingController();
   final _coOwnerEmailController = TextEditingController();
 
+  late BoatType _boatType;
   late BoatPropulsionType _propulsionType;
   late BoatUsageType _usageType;
   late BoatSize _boatSize;
@@ -63,6 +64,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
 
   void _initializeFromBoat(Boat? boat) {
     if (boat == null) {
+      _boatType = BoatType.lancha;
       _propulsionType = BoatPropulsionType.semPropulsao;
       _usageType = BoatUsageType.esporteRecreio;
       _boatSize = BoatSize.miuda;
@@ -70,6 +72,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
     }
 
     _nameController.text = boat.name;
+    _boatType = boat.boatType;
     if (boat.registrationNumber != null) {
       _registrationController.text = boat.registrationNumber!;
     }
@@ -191,6 +194,23 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
                       }
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<BoatType>(
+                    initialValue: _boatType,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de embarcação',
+                    ),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _boatType = value;
+                      });
+                    },
+                    items: [
+                      for (final type in BoatType.values)
+                        DropdownMenuItem(value: type, child: Text(type.label)),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -723,6 +743,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
         await repository.updateBoat(
           boatId: boat.id,
           name: name,
+          boatType: _boatType,
           registrationNumber: registrationNumber,
           fabricationYear: fabricationYear,
           propulsionType: _propulsionType,
@@ -745,6 +766,7 @@ class _BoatFormPageState extends ConsumerState<BoatFormPage> {
       } else {
         await repository.createBoat(
           name: name,
+          boatType: _boatType,
           registrationNumber: registrationNumber.isEmpty
               ? null
               : registrationNumber,

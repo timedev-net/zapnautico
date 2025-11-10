@@ -876,6 +876,16 @@ $$;
 create table if not exists public.boats (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  boat_type text not null default 'lancha' check (
+    boat_type in (
+      'lancha',
+      'jet_ski',
+      'barco_pesca',
+      'bote',
+      'iate',
+      'veleiro'
+    )
+  ),
   registration_number text,
   fabrication_year integer not null check (
     fabrication_year >= 1900
@@ -1323,6 +1333,7 @@ create or replace view public.boats_detailed as
 select
   b.id,
   b.name,
+  b.boat_type,
   b.registration_number,
   b.fabrication_year,
   b.propulsion_type,
@@ -1456,6 +1467,7 @@ create view public.boats_detailed as
 select
   b.id,
   b.name,
+  b.boat_type,
   b.registration_number,
   b.fabrication_year,
   b.propulsion_type,
@@ -1899,6 +1911,7 @@ photos as (
 select
   b.id,
   b.name,
+  b.boat_type,
   b.registration_number,
   b.fabrication_year,
   b.propulsion_type,
@@ -2027,6 +2040,7 @@ photos as (
 select
   b.id,
   b.name,
+  b.boat_type,
   b.registration_number,
   b.fabrication_year,
   b.propulsion_type,
