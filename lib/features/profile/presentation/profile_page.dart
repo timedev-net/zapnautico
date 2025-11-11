@@ -58,6 +58,11 @@ class ProfilePage extends ConsumerWidget {
             ? '${localizations.formatShortDate(lastSignInDate)} '
                   '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(lastSignInDate), alwaysUse24HourFormat: true)}'
             : 'Ainda não acessou.';
+        final userDisplayName =
+            metadata['full_name'] as String? ??
+            metadata['name'] as String? ??
+            user.email ??
+            user.id;
 
         return ListView(
           padding: const EdgeInsets.all(24),
@@ -83,10 +88,7 @@ class ProfilePage extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              metadata['full_name'] as String? ??
-                  metadata['name'] as String? ??
-                  user.email ??
-                  user.id,
+              userDisplayName,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
@@ -131,6 +133,7 @@ class ProfilePage extends ConsumerWidget {
             contactsAsync.when(
               data: (contacts) => _ContactPreferencesSection(
                 contacts: contacts,
+                userDisplayName: userDisplayName,
               ),
               loading: () => const Center(
                 child: Padding(
@@ -141,8 +144,8 @@ class ProfilePage extends ConsumerWidget {
               error: (error, stackTrace) => Text(
                 'Erro ao carregar contatos: $error',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -262,16 +265,19 @@ class ProfilePage extends ConsumerWidget {
 }
 
 class _ContactPreferencesSection extends ConsumerWidget {
-  const _ContactPreferencesSection({required this.contacts});
+  const _ContactPreferencesSection({
+    required this.contacts,
+    required this.userDisplayName,
+  });
 
   final List<UserContactChannel> contacts;
+  final String userDisplayName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final whatsappContacts = contacts
-        .where((contact) => contact.isWhatsapp)
-        .toList()
-      ..sort((a, b) => a.position.compareTo(b.position));
+    final whatsappContacts =
+        contacts.where((contact) => contact.isWhatsapp).toList()
+          ..sort((a, b) => a.position.compareTo(b.position));
 
     UserContactChannel? instagramContact;
     for (final contact in contacts) {
@@ -305,18 +311,15 @@ class _ContactPreferencesSection extends ConsumerWidget {
                       tooltip: 'Editar contato',
                       onPressed: () => _openWhatsappForm(
                         context,
-                        ref,
+                        defaultLabel: userDisplayName,
                         existing: contact,
                       ),
                       icon: const Icon(Icons.edit),
                     ),
                     IconButton(
                       tooltip: 'Remover contato',
-                      onPressed: () => _confirmDeleteContact(
-                        context,
-                        ref,
-                        contact,
-                      ),
+                      onPressed: () =>
+                          _confirmDeleteContact(context, ref, contact),
                       icon: const Icon(Icons.delete_outline),
                     ),
                   ],
@@ -327,7 +330,10 @@ class _ContactPreferencesSection extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: OutlinedButton.icon(
-                onPressed: () => _openWhatsappForm(context, ref),
+                onPressed: () => _openWhatsappForm(
+                  context,
+                  defaultLabel: userDisplayName,
+                ),
                 icon: const Icon(Icons.add),
                 label: const Text('Adicionar WhatsApp'),
               ),
@@ -349,7 +355,6 @@ class _ContactPreferencesSection extends ConsumerWidget {
                       : 'Editar Instagram',
                   onPressed: () => _openInstagramForm(
                     context,
-                    ref,
                     existing: instagramContact,
                   ),
                   icon: const Icon(Icons.edit),
@@ -357,11 +362,8 @@ class _ContactPreferencesSection extends ConsumerWidget {
                 if (instagramContact != null)
                   IconButton(
                     tooltip: 'Remover Instagram',
-                    onPressed: () => _confirmDeleteContact(
-                      context,
-                      ref,
-                      instagramContact!,
-                    ),
+                    onPressed: () =>
+                        _confirmDeleteContact(context, ref, instagramContact!),
                     icon: const Icon(Icons.delete_outline),
                   ),
               ],
@@ -374,20 +376,87 @@ class _ContactPreferencesSection extends ConsumerWidget {
 }
 
 Future<void> _openWhatsappForm(
-  BuildContext context,
-  WidgetRef ref, {
+  BuildContext context, {
+  required String defaultLabel,
   UserContactChannel? existing,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  final formKey = GlobalKey<FormState>();
-  final segments = _WhatsappSegments.fromValue(existing?.value);
-  final nameController = TextEditingController(text: existing?.label ?? '');
-  final dddController = TextEditingController(text: segments.ddd);
-  final numberController = TextEditingController(text: segments.number);
 
-  String previewNumber() {
-    final ddd = dddController.text;
-    final number = numberController.text;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => _WhatsappFormSheet(
+      defaultLabel: defaultLabel,
+      existing: existing,
+      messenger: messenger,
+    ),
+  );
+}
+
+Future<void> _openInstagramForm(
+  BuildContext context, {
+  UserContactChannel? existing,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => _InstagramFormSheet(
+      existing: existing,
+      messenger: messenger,
+    ),
+  );
+}
+
+class _WhatsappFormSheet extends ConsumerStatefulWidget {
+  const _WhatsappFormSheet({
+    required this.defaultLabel,
+    required this.messenger,
+    this.existing,
+  });
+
+  final String defaultLabel;
+  final ScaffoldMessengerState messenger;
+  final UserContactChannel? existing;
+
+  @override
+  ConsumerState<_WhatsappFormSheet> createState() => _WhatsappFormSheetState();
+}
+
+class _WhatsappFormSheetState extends ConsumerState<_WhatsappFormSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _dddController;
+  late final TextEditingController _numberController;
+  late final String _resolvedLabel;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    final segments = _WhatsappSegments.fromValue(widget.existing?.value);
+    _dddController = TextEditingController(text: segments.ddd);
+    _numberController = TextEditingController(text: segments.number);
+    _resolvedLabel = _resolveLabel();
+  }
+
+  String _resolveLabel() {
+    final existing = widget.existing;
+    if (existing != null && existing.label.trim().isNotEmpty) {
+      return existing.label.trim();
+    }
+    final defaultLabel = widget.defaultLabel.trim();
+    if (defaultLabel.isNotEmpty) {
+      return defaultLabel;
+    }
+    return 'Contato WhatsApp';
+  }
+
+  String _previewNumber() {
+    final ddd = _dddController.text;
+    final number = _numberController.text;
     if (ddd.length < 2 || number.length < 8) {
       return 'Informe DDD e número para gerar o link.';
     }
@@ -395,254 +464,266 @@ Future<void> _openWhatsappForm(
     return 'Link gerado: $formatted';
   }
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) {
-      final navigator = Navigator.of(sheetContext);
-      return Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-        ),
-        child: StatefulBuilder(
-          builder: (stateContext, setState) {
-            String? errorText;
-
-            Future<void> submit() async {
-              if (!formKey.currentState!.validate()) {
-                return;
-              }
-              final ddd = dddController.text;
-              final number = numberController.text;
-              try {
-                await ref.read(userContactRepositoryProvider).upsertContact(
-                      id: existing?.id,
-                      channel: 'whatsapp',
-                      label: nameController.text.trim(),
-                      value: '+55$ddd$number',
-                    );
-                ref.invalidate(userContactsProvider);
-                navigator.pop();
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      existing == null
-                          ? 'Contato salvo com sucesso.'
-                          : 'Contato atualizado.',
-                    ),
-                  ),
-                );
-              } catch (error) {
-                setState(() {
-                  errorText = '$error';
-                });
-              }
-            }
-
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      existing == null
-                          ? 'Novo contato WhatsApp'
-                          : 'Editar contato WhatsApp',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nome do contato',
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Informe o nome para identificação.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextFormField(
-                            controller: dddController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(2),
-                            ],
-                            decoration: const InputDecoration(
-                              labelText: 'DDD',
-                            ),
-                            onChanged: (_) => setState(() {}),
-                            validator: (value) {
-                              if (value == null || value.length != 2) {
-                                return 'Informe o DDD';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 5,
-                          child: TextFormField(
-                            controller: numberController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(9),
-                            ],
-                            decoration: const InputDecoration(
-                              labelText: 'Número',
-                              hintText: '987654321',
-                            ),
-                            onChanged: (_) => setState(() {}),
-                            validator: (value) {
-                              if (value == null || value.length < 8) {
-                                return 'Informe o número com 8 ou 9 dígitos.';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      previewNumber(),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (errorText != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        errorText!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        icon: const Icon(Icons.save),
-                        label: Text(existing == null ? 'Salvar contato' : 'Atualizar'),
-                        onPressed: submit,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    final ddd = _dddController.text;
+    final number = _numberController.text;
+    try {
+      await ref.read(userContactRepositoryProvider).upsertContact(
+            id: widget.existing?.id,
+            channel: 'whatsapp',
+            label: _resolvedLabel,
+            value: '+55$ddd$number',
+          );
+      ref.invalidate(userContactsProvider);
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop();
+      widget.messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.existing == null
+                ? 'Contato salvo com sucesso.'
+                : 'Contato atualizado.',
+          ),
         ),
       );
-    },
-  );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorText = '$error';
+      });
+    }
+  }
 
-  nameController.dispose();
-  dddController.dispose();
-  numberController.dispose();
+  @override
+  void dispose() {
+    _dddController.dispose();
+    _numberController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom + 24;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, bottomPadding),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.existing == null
+                  ? 'Novo contato WhatsApp'
+                  : 'Editar contato WhatsApp',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Este contato será exibido como "${_resolvedLabel}".',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: _dddController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(2),
+                    ],
+                    decoration: const InputDecoration(labelText: 'DDD'),
+                    onChanged: (_) => setState(() {}),
+                    validator: (value) {
+                      if (value == null || value.length != 2) {
+                        return 'Informe o DDD';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 5,
+                  child: TextFormField(
+                    controller: _numberController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(9),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Número',
+                      hintText: '987654321',
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    validator: (value) {
+                      if (value == null || value.length < 8) {
+                        return 'Informe o número com 8 ou 9 dígitos.';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _previewNumber(),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (_errorText != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _errorText!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.save),
+                label: Text(
+                  widget.existing == null ? 'Salvar contato' : 'Atualizar',
+                ),
+                onPressed: _submit,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-Future<void> _openInstagramForm(
-  BuildContext context,
-  WidgetRef ref, {
-  UserContactChannel? existing,
-}) async {
-  final messenger = ScaffoldMessenger.of(context);
-  final controller = TextEditingController(text: existing?.value ?? '');
-  String? errorText;
+class _InstagramFormSheet extends ConsumerStatefulWidget {
+  const _InstagramFormSheet({
+    required this.messenger,
+    this.existing,
+  });
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) {
-      final navigator = Navigator.of(sheetContext);
-      return Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-        ),
-        child: StatefulBuilder(
-          builder: (stateContext, setState) {
-            Future<void> submit() async {
-              if (controller.text.trim().isEmpty) {
-                setState(() => errorText = 'Informe o usuário do Instagram.');
-                return;
-              }
-              try {
-                await ref.read(userContactRepositoryProvider).upsertContact(
-                      id: existing?.id,
-                      channel: 'instagram',
-                      label: 'Instagram',
-                      value: controller.text.trim(),
-                    );
-                ref.invalidate(userContactsProvider);
-                navigator.pop();
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Instagram atualizado.')),
-                );
-              } catch (error) {
-                setState(() => errorText = '$error');
-              }
-            }
+  final ScaffoldMessengerState messenger;
+  final UserContactChannel? existing;
 
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    existing == null
-                        ? 'Adicionar Instagram'
-                        : 'Editar Instagram',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: 'Usuário',
-                      prefixText: '@',
-                    ),
-                  ),
-                  if (errorText != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      errorText!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.save),
-                      label: const Text('Salvar'),
-                      onPressed: submit,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
+  @override
+  ConsumerState<_InstagramFormSheet> createState() =>
+      _InstagramFormSheetState();
+}
+
+class _InstagramFormSheetState extends ConsumerState<_InstagramFormSheet> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.existing?.value ?? '');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final value = _controller.text.trim();
+    if (value.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorText = 'Informe o usuário do Instagram.');
+      return;
+    }
+    try {
+      await ref.read(userContactRepositoryProvider).upsertContact(
+            id: widget.existing?.id,
+            channel: 'instagram',
+            label: 'Instagram',
+            value: value,
+          );
+      ref.invalidate(userContactsProvider);
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop();
+      widget.messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.existing == null
+                ? 'Instagram cadastrado.'
+                : 'Instagram atualizado.',
+          ),
         ),
       );
-    },
-  );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorText = '$error');
+    }
+  }
 
-  controller.dispose();
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom + 24;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, bottomPadding),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.existing == null
+                ? 'Adicionar Instagram'
+                : 'Editar Instagram',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            decoration: const InputDecoration(
+              labelText: 'Usuário',
+              prefixText: '@',
+            ),
+          ),
+          if (_errorText != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _errorText!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: const Icon(Icons.save),
+              label: const Text('Salvar'),
+              onPressed: _submit,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 Future<void> _confirmDeleteContact(

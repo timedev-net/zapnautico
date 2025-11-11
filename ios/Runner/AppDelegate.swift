@@ -1,4 +1,5 @@
 import FirebaseCore
+import FirebaseMessaging
 import Flutter
 import UIKit
 import UserNotifications
@@ -16,5 +17,16 @@ import UserNotifications
     application.registerForRemoteNotifications()
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    Messaging.messaging().apnsToken = deviceToken
+    super.application(
+      application,
+      didRegisterForRemoteNotificationsWithDeviceToken: deviceToken
+    )
   }
 }
