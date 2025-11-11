@@ -48,6 +48,8 @@ dependencies:
   firebase_core: ^4.2.1
   firebase_messaging: ^16.0.4
   fl_chart: ^0.69.0
+  http: ^1.2.2
+  youtube_player_iframe: ^5.1.2
 
 dev_dependencies:
   flutter_test:
