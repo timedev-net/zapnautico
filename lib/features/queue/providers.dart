@@ -1,11 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/supabase_providers.dart';
 import '../boats/data/boat_repository.dart';
 import '../boats/domain/boat.dart';
+import '../boats/providers.dart';
 import '../user_profiles/domain/profile_models.dart';
 import '../user_profiles/providers.dart';
-import '../../core/supabase_providers.dart';
 import 'data/launch_queue_repository.dart';
 import 'domain/launch_queue_entry.dart';
 
@@ -36,11 +37,47 @@ final queueForcedMarinaIdProvider = Provider<String?>((ref) {
   );
 });
 
+final queueOwnerDefaultMarinaIdProvider = Provider<String?>((ref) {
+  final profilesAsync = ref.watch(currentUserProfilesProvider);
+  final hasOwnerProfile = profilesAsync.asData?.value.any(
+        (profile) =>
+            profile.profileSlug == 'proprietario' ||
+            profile.profileSlug == 'cotista',
+      ) ??
+      false;
+
+  if (!hasOwnerProfile) {
+    return null;
+  }
+
+  final boatsAsync = ref.watch(boatsProvider);
+  final boats = boatsAsync.asData?.value;
+
+  if (boats == null || boats.isEmpty) {
+    return null;
+  }
+
+  for (final boat in boats) {
+    final marinaId = boat.marinaId;
+    if (marinaId != null && marinaId.isNotEmpty) {
+      return marinaId;
+    }
+  }
+
+  return null;
+});
+
 final queueAppliedFilterProvider = Provider<String?>((ref) {
   final forcedMarinaId = ref.watch(queueForcedMarinaIdProvider);
   if (forcedMarinaId != null) return forcedMarinaId;
 
-  return ref.watch(queueFilterProvider);
+  final currentFilter = ref.watch(queueFilterProvider);
+  if (currentFilter != null) {
+    return currentFilter;
+  }
+
+  final ownerDefault = ref.watch(queueOwnerDefaultMarinaIdProvider);
+  return ownerDefault?.isNotEmpty == true ? ownerDefault : null;
 });
 
 final queueEntriesProvider =
@@ -48,16 +85,40 @@ final queueEntriesProvider =
   final repository = ref.watch(launchQueueRepositoryProvider);
   final marinaId = ref.watch(queueAppliedFilterProvider);
   final entries = await repository.fetchEntries();
+  final profiles = await ref.watch(currentUserProfilesProvider.future);
+
+  final hasAdminProfile = profiles.any(
+    (profile) => profile.profileSlug == 'administrador',
+  );
+  final hasMarinaProfile =
+      profiles.any((profile) => profile.profileSlug == 'marina');
+  final hasOwnerProfile = profiles.any(
+    (profile) =>
+        profile.profileSlug == 'proprietario' ||
+        profile.profileSlug == 'cotista',
+  );
+
+  Iterable<LaunchQueueEntry> filteredEntries = entries;
 
   if (marinaId == queueNoMarinaFilterValue) {
-    return entries.where((entry) => entry.marinaId.isEmpty).toList();
+    filteredEntries = filteredEntries.where((entry) => entry.marinaId.isEmpty);
+  } else if (marinaId != null && marinaId.isNotEmpty) {
+    filteredEntries =
+        filteredEntries.where((entry) => entry.marinaId == marinaId);
   }
 
-  if (marinaId != null && marinaId.isNotEmpty) {
-    return entries.where((entry) => entry.marinaId == marinaId).toList();
+  final shouldLimitStatuses =
+      hasOwnerProfile && !hasAdminProfile && !hasMarinaProfile;
+  if (shouldLimitStatuses) {
+    filteredEntries = filteredEntries.where(
+      (entry) =>
+          entry.isOwnBoat ||
+          entry.status == 'pending' ||
+          entry.status == 'in_progress',
+    );
   }
 
-  return entries;
+  return filteredEntries.toList();
 });
 
 final queueOperationInProgressProvider = StateProvider<bool>((ref) => false);

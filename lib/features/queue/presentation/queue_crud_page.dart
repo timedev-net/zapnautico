@@ -674,8 +674,13 @@ class _QueueMarinaFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasSelectedMarina = selectedMarinaId != null &&
+        (selectedMarinaId == queueNoMarinaFilterValue ||
+            marinas.any((marina) => marina.id == selectedMarinaId));
+    final effectiveSelected = hasSelectedMarina ? selectedMarinaId : null;
+
     return DropdownButtonFormField<String?>(
-      initialValue: selectedMarinaId,
+      initialValue: effectiveSelected,
       decoration: const InputDecoration(
         labelText: 'Filtrar por marina',
         border: OutlineInputBorder(),
@@ -683,10 +688,6 @@ class _QueueMarinaFilter extends StatelessWidget {
       hint: const Text('Selecione uma opção'),
       isExpanded: true,
       items: [
-        const DropdownMenuItem<String?>(
-          value: null,
-          child: Text('Todas as marinas'),
-        ),
         const DropdownMenuItem<String?>(
           value: queueNoMarinaFilterValue,
           child: Text('Sem marina'),
