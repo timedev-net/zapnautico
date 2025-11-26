@@ -17,7 +17,9 @@ class QueueCrudPage extends ConsumerWidget {
     final entriesAsync = ref.watch(queueEntriesProvider);
     final marinasAsync = ref.watch(marinasProvider);
     final isProcessing = ref.watch(queueOperationInProgressProvider);
-    final selectedMarinaId = ref.watch(queueFilterProvider);
+    final selectedMarinaId = ref.watch(queueAppliedFilterProvider);
+    final forcedMarinaId = ref.watch(queueForcedMarinaIdProvider);
+    final hasLockedMarinaFilter = forcedMarinaId != null;
 
     final marinas = marinasAsync.asData?.value ?? const <Marina>[];
 
@@ -38,26 +40,32 @@ class QueueCrudPage extends ConsumerWidget {
         data: (entries) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: _QueueMarinaFilter(
-                marinas: marinas,
-                selectedMarinaId: selectedMarinaId,
-                onChanged: (value) {
-                  ref.read(queueFilterProvider.notifier).state = value;
-                  ref.invalidate(queueEntriesProvider);
-                },
+            if (!hasLockedMarinaFilter)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: _QueueMarinaFilter(
+                  marinas: marinas,
+                  selectedMarinaId: selectedMarinaId,
+                  onChanged: (value) {
+                    ref.read(queueFilterProvider.notifier).state = value;
+                    ref.invalidate(queueEntriesProvider);
+                  },
+                ),
               ),
-            ),
             Expanded(
               child: _QueueEntriesList(
                 entries: entries,
                 isLoading: entriesAsync.isLoading,
                 actionsEnabled: !isProcessing,
+                showEditDelete: !hasLockedMarinaFilter,
+                showLaunchButton: hasLockedMarinaFilter,
                 onRefresh: () async {
                   ref.invalidate(queueEntriesProvider);
                   await ref.read(queueEntriesProvider.future);
                 },
+                onLaunch: hasLockedMarinaFilter
+                    ? (entry) => _completeEntry(context, ref, entry)
+                    : null,
                 onEdit: (entry) => _openForm(context, ref, entry: entry),
                 onDelete: (entry) => _deleteEntry(context, ref, entry),
               ),
@@ -123,7 +131,7 @@ class QueueCrudPage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final currentFilter = ref.read(queueFilterProvider);
+    final currentFilter = ref.read(queueAppliedFilterProvider);
     final selectedFilterMarina =
         currentFilter == queueNoMarinaFilterValue ? null : currentFilter;
 
@@ -206,6 +214,52 @@ class QueueCrudPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _completeEntry(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (ref.read(queueOperationInProgressProvider)) {
+      return;
+    }
+
+    final notifier = ref.read(queueOperationInProgressProvider.notifier);
+    notifier.state = true;
+
+    final repository = ref.read(launchQueueRepositoryProvider);
+
+    try {
+      await repository.updateEntry(
+        entryId: entry.id,
+        status: 'completed',
+        processedAt: DateTime.now(),
+      );
+
+      ref.invalidate(queueEntriesProvider);
+      await ref.read(queueEntriesProvider.future);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '"${entry.displayBoatName}" marcado como descido.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível descer a embarcação: $error'),
+          ),
+        );
+      }
+    } finally {
+      notifier.state = false;
+    }
+  }
+
   Future<void> _deleteEntry(
     BuildContext context,
     WidgetRef ref,
@@ -275,17 +329,23 @@ class _QueueEntriesList extends StatelessWidget {
     required this.entries,
     required this.isLoading,
     required this.actionsEnabled,
+    required this.showEditDelete,
+    required this.showLaunchButton,
     required this.onRefresh,
     required this.onEdit,
     required this.onDelete,
+    this.onLaunch,
   });
 
   final List<LaunchQueueEntry> entries;
   final bool isLoading;
   final bool actionsEnabled;
+  final bool showEditDelete;
+  final bool showLaunchButton;
   final Future<void> Function() onRefresh;
   final void Function(LaunchQueueEntry entry) onEdit;
   final void Function(LaunchQueueEntry entry) onDelete;
+  final void Function(LaunchQueueEntry entry)? onLaunch;
 
   @override
   Widget build(BuildContext context) {
@@ -322,6 +382,37 @@ class _QueueEntriesList extends StatelessWidget {
         itemBuilder: (context, index) {
           final entry = entries[index];
           final subtitleLines = _buildSubtitleLines(entry);
+          final trailingChildren = <Widget>[];
+
+          if (showLaunchButton && onLaunch != null) {
+            trailingChildren.add(
+              FilledButton.tonal(
+                onPressed:
+                    actionsEnabled ? () => onLaunch!(entry) : null,
+                style: FilledButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('Descer'),
+              ),
+            );
+          }
+
+          if (showEditDelete) {
+            trailingChildren.addAll([
+              IconButton(
+                tooltip: 'Editar entrada',
+                icon: const Icon(Icons.edit),
+                onPressed: actionsEnabled ? () => onEdit(entry) : null,
+              ),
+              IconButton(
+                tooltip: 'Remover entrada',
+                icon: const Icon(Icons.delete),
+                onPressed: actionsEnabled ? () => onDelete(entry) : null,
+              ),
+            ]);
+          }
 
           return Card(
             child: ListTile(
@@ -334,21 +425,12 @@ class _QueueEntriesList extends StatelessWidget {
                 subtitleLines.join('\n'),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Editar entrada',
-                    icon: const Icon(Icons.edit),
-                    onPressed: actionsEnabled ? () => onEdit(entry) : null,
-                  ),
-                  IconButton(
-                    tooltip: 'Remover entrada',
-                    icon: const Icon(Icons.delete),
-                    onPressed: actionsEnabled ? () => onDelete(entry) : null,
-                  ),
-                ],
-              ),
+              trailing: trailingChildren.isEmpty
+                  ? null
+                  : Wrap(
+                      spacing: 8,
+                      children: trailingChildren,
+                    ),
             ),
           );
         },
