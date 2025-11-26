@@ -888,6 +888,8 @@ class _QueueStatusOption {
 
 const _statusOptions = <_QueueStatusOption>[
   _QueueStatusOption('pending', 'Pendente'),
+  _QueueStatusOption('in_progress', 'Em andamento'),
+  _QueueStatusOption('in_water', 'Na água'),
   _QueueStatusOption('completed', 'Concluída'),
   _QueueStatusOption('cancelled', 'Cancelada'),
 ];
