@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../boats/data/boat_repository.dart';
 import '../boats/domain/boat.dart';
 import '../user_profiles/domain/profile_models.dart';
 import '../user_profiles/providers.dart';
+import '../../core/supabase_providers.dart';
 import 'data/launch_queue_repository.dart';
 import 'domain/launch_queue_entry.dart';
 
@@ -63,4 +65,43 @@ final queueOperationInProgressProvider = StateProvider<bool>((ref) => false);
 final queueBoatsProvider = FutureProvider<List<Boat>>((ref) {
   final repository = ref.watch(boatRepositoryProvider);
   return repository.fetchBoats();
+});
+
+/// Keeps the queue entries updated by listening to realtime changes.
+final queueRealtimeSyncProvider = Provider.autoDispose<void>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  final channel = client.channel('realtime-boat-launch-queue');
+
+  void refresh() => ref.invalidate(queueEntriesProvider);
+
+  channel
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'boat_launch_queue',
+      callback: (_) => refresh(),
+    )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'boat_launch_queue',
+      callback: (_) => refresh(),
+    )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'boat_launch_queue',
+      callback: (_) => refresh(),
+    );
+
+  channel.subscribe();
+
+  ref.onDispose(() async {
+    try {
+      await channel.unsubscribe();
+    } catch (_) {}
+    try {
+      await client.removeChannel(channel);
+    } catch (_) {}
+  });
 });

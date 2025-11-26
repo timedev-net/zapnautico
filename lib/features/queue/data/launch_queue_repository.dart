@@ -16,7 +16,20 @@ class LaunchQueueRepository {
         .order('queue_position', ascending: true);
 
     final data = (response as List).cast<Map<String, dynamic>>();
-    return data.map(LaunchQueueEntry.fromMap).toList();
+    final entries = data.map(LaunchQueueEntry.fromMap).toList();
+
+    entries.sort((a, b) {
+      final aInWater = a.status == 'in_water';
+      final bInWater = b.status == 'in_water';
+      if (aInWater != bInWater) return aInWater ? 1 : -1;
+
+      final positionComparison = a.queuePosition.compareTo(b.queuePosition);
+      if (positionComparison != 0) return positionComparison;
+
+      return a.requestedAt.compareTo(b.requestedAt);
+    });
+
+    return entries;
   }
 
   Future<void> createEntry({

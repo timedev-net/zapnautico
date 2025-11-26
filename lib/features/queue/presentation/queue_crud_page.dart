@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -20,6 +22,7 @@ class QueueCrudPage extends ConsumerWidget {
     final selectedMarinaId = ref.watch(queueAppliedFilterProvider);
     final forcedMarinaId = ref.watch(queueForcedMarinaIdProvider);
     final hasLockedMarinaFilter = forcedMarinaId != null;
+    ref.watch(queueRealtimeSyncProvider);
 
     final marinas = marinasAsync.asData?.value ?? const <Marina>[];
 
@@ -64,7 +67,7 @@ class QueueCrudPage extends ConsumerWidget {
                   await ref.read(queueEntriesProvider.future);
                 },
                 onLaunch: hasLockedMarinaFilter
-                    ? (entry) => _completeEntry(context, ref, entry)
+                    ? (entry) => _startLaunch(context, ref, entry)
                     : null,
                 onEdit: (entry) => _openForm(context, ref, entry: entry),
                 onDelete: (entry) => _deleteEntry(context, ref, entry),
@@ -214,7 +217,7 @@ class QueueCrudPage extends ConsumerWidget {
     }
   }
 
-  Future<void> _completeEntry(
+  Future<void> _startLaunch(
     BuildContext context,
     WidgetRef ref,
     LaunchQueueEntry entry,
@@ -222,6 +225,9 @@ class QueueCrudPage extends ConsumerWidget {
     if (ref.read(queueOperationInProgressProvider)) {
       return;
     }
+
+    final minutes = await _askLaunchDuration(context);
+    if (minutes == null) return;
 
     final notifier = ref.read(queueOperationInProgressProvider.notifier);
     notifier.state = true;
@@ -231,18 +237,19 @@ class QueueCrudPage extends ConsumerWidget {
     try {
       await repository.updateEntry(
         entryId: entry.id,
-        status: 'completed',
-        processedAt: DateTime.now(),
+        status: 'in_progress',
       );
 
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
 
+      unawaited(_scheduleMoveToInWater(ref, entry.id, minutes));
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '"${entry.displayBoatName}" marcado como descido.',
+              '"${entry.displayBoatName}" em andamento por $minutes min.',
             ),
           ),
         );
@@ -257,6 +264,70 @@ class QueueCrudPage extends ConsumerWidget {
       }
     } finally {
       notifier.state = false;
+    }
+  }
+
+  Future<int?> _askLaunchDuration(BuildContext context) async {
+    final formKey = GlobalKey<FormState>();
+    final controller = TextEditingController(text: '5');
+
+    return showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Tempo para descer'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: 'Minutos',
+              border: OutlineInputBorder(),
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              final parsed = int.tryParse(value ?? '');
+              if (parsed == null || parsed <= 0) {
+                return 'Informe um tempo válido em minutos.';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              final parsed = int.parse(controller.text);
+              Navigator.of(dialogContext).pop(parsed);
+            },
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _scheduleMoveToInWater(
+    WidgetRef ref,
+    String entryId,
+    int minutes,
+  ) async {
+    await Future.delayed(Duration(minutes: minutes));
+
+    final repository = ref.read(launchQueueRepositoryProvider);
+    try {
+      await repository.updateEntry(
+        entryId: entryId,
+        status: 'in_water',
+        processedAt: DateTime.now(),
+      );
+      ref.invalidate(queueEntriesProvider);
+    } catch (_) {
+      // Best-effort; user can refresh manually if update fails.
     }
   }
 
@@ -349,6 +420,7 @@ class _QueueEntriesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     if (entries.isEmpty) {
       return RefreshIndicator(
         onRefresh: onRefresh,
@@ -382,6 +454,7 @@ class _QueueEntriesList extends StatelessWidget {
         itemBuilder: (context, index) {
           final entry = entries[index];
           final subtitleLines = _buildSubtitleLines(entry);
+          final cardColor = _cardColor(entry.status, theme);
           final trailingChildren = <Widget>[];
 
           if (showLaunchButton && onLaunch != null) {
@@ -415,6 +488,7 @@ class _QueueEntriesList extends StatelessWidget {
           }
 
           return Card(
+            color: cardColor,
             child: ListTile(
               leading: _QueueEntryAvatar(entry: entry),
               title: Text(
@@ -472,6 +546,17 @@ class _QueueEntriesList extends StatelessWidget {
 
     return lines;
   }
+
+  Color? _cardColor(String status, ThemeData theme) {
+    switch (status) {
+      case 'in_progress':
+        return Colors.orange.shade50;
+      case 'in_water':
+        return Colors.lightBlue.shade50;
+      default:
+        return null;
+    }
+  }
 }
 
 class _QueueEntryAvatar extends StatelessWidget {
@@ -520,22 +605,23 @@ class _QueueEntryAvatar extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(child: avatarContent),
-          Positioned(
-            bottom: -2,
-            right: -2,
-            child: CircleAvatar(
-              radius: 14,
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              child: Text(
-                entry.queuePosition.toString(),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onPrimary,
-                  fontWeight: FontWeight.w600,
+          if (entry.status != 'in_water')
+            Positioned(
+              bottom: -2,
+              right: -2,
+              child: CircleAvatar(
+                radius: 14,
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+                child: Text(
+                  entry.queuePosition.toString(),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
