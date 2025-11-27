@@ -13,6 +13,9 @@ import '../data/launch_queue_repository.dart';
 import '../domain/launch_queue_entry.dart';
 import '../providers.dart';
 
+final _scheduledStatusTimers = <String, Timer>{};
+final _inProgressPreviousStatuses = <String, String>{};
+
 class QueueCrudPage extends ConsumerWidget {
   const QueueCrudPage({super.key});
 
@@ -123,6 +126,12 @@ class QueueCrudPage extends ConsumerWidget {
                   },
                   onLaunch: hasLockedMarinaFilter
                       ? (entry) => _startLaunch(context, ref, entry)
+                      : null,
+                  onLift: hasLockedMarinaFilter
+                      ? (entry) => _startLift(context, ref, entry)
+                      : null,
+                  onCancel: hasLockedMarinaFilter
+                      ? (entry) => _cancelInProgress(context, ref, entry)
                       : null,
                   onEdit: (entry) => _openForm(context, ref, entry: entry),
                   onDelete: (entry) => _deleteEntry(context, ref, entry),
@@ -272,6 +281,15 @@ class QueueCrudPage extends ConsumerWidget {
     }
   }
 
+  void _cancelScheduledTransition(String entryId) {
+    final timer = _scheduledStatusTimers.remove(entryId);
+    timer?.cancel();
+  }
+
+  void _registerPreviousStatus(LaunchQueueEntry entry) {
+    _inProgressPreviousStatuses[entry.id] = entry.status;
+  }
+
   Future<void> _startLaunch(
     BuildContext context,
     WidgetRef ref,
@@ -281,8 +299,14 @@ class QueueCrudPage extends ConsumerWidget {
       return;
     }
 
-    final minutes = await _askLaunchDuration(context);
+    final minutes = await _askDuration(
+      context,
+      title: 'Tempo para descer',
+    );
     if (minutes == null) return;
+
+    _registerPreviousStatus(entry);
+    _cancelScheduledTransition(entry.id);
 
     final notifier = ref.read(queueOperationInProgressProvider.notifier);
     notifier.state = true;
@@ -319,14 +343,122 @@ class QueueCrudPage extends ConsumerWidget {
     }
   }
 
-  Future<int?> _askLaunchDuration(BuildContext context) async {
+  Future<void> _startLift(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (ref.read(queueOperationInProgressProvider)) {
+      return;
+    }
+
+    final minutes = await _askDuration(
+      context,
+      title: 'Tempo para subir',
+    );
+    if (minutes == null) return;
+
+    _registerPreviousStatus(entry);
+    _cancelScheduledTransition(entry.id);
+
+    final notifier = ref.read(queueOperationInProgressProvider.notifier);
+    notifier.state = true;
+
+    final repository = ref.read(launchQueueRepositoryProvider);
+
+    try {
+      await repository.updateEntry(entryId: entry.id, status: 'in_progress');
+
+      ref.invalidate(queueEntriesProvider);
+      await ref.read(queueEntriesProvider.future);
+
+      unawaited(_scheduleMoveToCompleted(ref, entry.id, minutes));
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '"${entry.displayBoatName}" subindo por $minutes min.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível subir a embarcação: $error'),
+          ),
+        );
+      }
+    } finally {
+      notifier.state = false;
+    }
+  }
+
+  Future<void> _cancelInProgress(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (ref.read(queueOperationInProgressProvider)) {
+      return;
+    }
+
+    final previousStatus =
+        _inProgressPreviousStatuses[entry.id] == 'in_water' ? 'in_water' : 'pending';
+
+    final notifier = ref.read(queueOperationInProgressProvider.notifier);
+    notifier.state = true;
+
+    final repository = ref.read(launchQueueRepositoryProvider);
+    _cancelScheduledTransition(entry.id);
+
+    try {
+      await repository.updateEntry(
+        entryId: entry.id,
+        status: previousStatus,
+        clearProcessedAt: previousStatus == 'pending',
+      );
+
+      ref.invalidate(queueEntriesProvider);
+      await ref.read(queueEntriesProvider.future);
+
+      _inProgressPreviousStatuses.remove(entry.id);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ação cancelada. Status retornou para "${_translateStatus(previousStatus)}".',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível cancelar a ação: $error'),
+          ),
+        );
+      }
+    } finally {
+      notifier.state = false;
+    }
+  }
+
+  Future<int?> _askDuration(
+    BuildContext context, {
+    required String title,
+  }) async {
     final formKey = GlobalKey<FormState>();
     final controller = TextEditingController(text: '5');
 
     return showDialog<int>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Tempo para descer'),
+        title: Text(title),
         content: Form(
           key: formKey,
           child: TextFormField(
@@ -368,19 +500,57 @@ class QueueCrudPage extends ConsumerWidget {
     String entryId,
     int minutes,
   ) async {
-    await Future.delayed(Duration(minutes: minutes));
+    _cancelScheduledTransition(entryId);
+    late Timer timer;
+    timer = Timer(Duration(minutes: minutes), () async {
+      if (_scheduledStatusTimers[entryId] != timer) return;
 
-    final repository = ref.read(launchQueueRepositoryProvider);
-    try {
-      await repository.updateEntry(
-        entryId: entryId,
-        status: 'in_water',
-        processedAt: DateTime.now(),
-      );
-      ref.invalidate(queueEntriesProvider);
-    } catch (_) {
-      // Best-effort; user can refresh manually if update fails.
-    }
+      final repository = ref.read(launchQueueRepositoryProvider);
+      try {
+        await repository.updateEntry(
+          entryId: entryId,
+          status: 'in_water',
+          processedAt: DateTime.now(),
+        );
+        ref.invalidate(queueEntriesProvider);
+      } catch (_) {
+        // Best-effort; user can refresh manually if update fails.
+      } finally {
+        _scheduledStatusTimers.remove(entryId);
+        _inProgressPreviousStatuses.remove(entryId);
+      }
+    });
+
+    _scheduledStatusTimers[entryId] = timer;
+  }
+
+  Future<void> _scheduleMoveToCompleted(
+    WidgetRef ref,
+    String entryId,
+    int minutes,
+  ) async {
+    _cancelScheduledTransition(entryId);
+    late Timer timer;
+    timer = Timer(Duration(minutes: minutes), () async {
+      if (_scheduledStatusTimers[entryId] != timer) return;
+
+      final repository = ref.read(launchQueueRepositoryProvider);
+      try {
+        await repository.updateEntry(
+          entryId: entryId,
+          status: 'completed',
+          processedAt: DateTime.now(),
+        );
+        ref.invalidate(queueEntriesProvider);
+      } catch (_) {
+        // Best-effort; user can refresh manually if update fails.
+      } finally {
+        _scheduledStatusTimers.remove(entryId);
+        _inProgressPreviousStatuses.remove(entryId);
+      }
+    });
+
+    _scheduledStatusTimers[entryId] = timer;
   }
 
   Future<void> _deleteEntry(
@@ -505,6 +675,8 @@ class _QueueEntriesList extends StatelessWidget {
     required this.onDelete,
     this.onLaunch,
     this.onRaise,
+    this.onLift,
+    this.onCancel,
   });
 
   final List<LaunchQueueEntry> entries;
@@ -520,6 +692,8 @@ class _QueueEntriesList extends StatelessWidget {
   final void Function(LaunchQueueEntry entry) onDelete;
   final void Function(LaunchQueueEntry entry)? onLaunch;
   final void Function(LaunchQueueEntry entry)? onRaise;
+  final void Function(LaunchQueueEntry entry)? onLift;
+  final void Function(LaunchQueueEntry entry)? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -584,20 +758,42 @@ class _QueueEntriesList extends StatelessWidget {
             );
           }
 
-          if (showLaunchButton && onLaunch != null) {
-            trailingChildren.add(
-              FilledButton.tonal(
-                onPressed: actionsEnabled ? () => onLaunch!(entry) : null,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+          if (showLaunchButton) {
+            if (entry.status == 'in_progress') {
+              if (onCancel != null) {
+                trailingChildren.add(
+                  FilledButton.tonal(
+                    onPressed: actionsEnabled ? () => onCancel!(entry) : null,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Cancelar'),
                   ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                child: const Text('Descer'),
-              ),
-            );
+                );
+              }
+            } else {
+              final isInWater = entry.status == 'in_water';
+              final action = isInWater ? onLift : onLaunch;
+              if (action != null) {
+                trailingChildren.add(
+                  FilledButton.tonal(
+                    onPressed: actionsEnabled ? () => action(entry) : null,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: Text(isInWater ? 'Subir' : 'Descer'),
+                  ),
+                );
+              }
+            }
           }
 
           if (showEditDelete) {
