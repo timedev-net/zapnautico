@@ -10,6 +10,16 @@ import '../user_profiles/providers.dart';
 import 'data/launch_queue_repository.dart';
 import 'domain/launch_queue_entry.dart';
 
+class QueueEntriesState {
+  const QueueEntriesState({
+    required this.entries,
+    required this.inWaterCountForSelectedMarina,
+  });
+
+  final List<LaunchQueueEntry> entries;
+  final int inWaterCountForSelectedMarina;
+}
+
 const queueNoMarinaFilterValue = '__queue_no_marina__';
 
 final queueFilterProvider = StateProvider<String?>((ref) => null);
@@ -39,7 +49,8 @@ final queueForcedMarinaIdProvider = Provider<String?>((ref) {
 
 final queueOwnerDefaultMarinaIdProvider = Provider<String?>((ref) {
   final profilesAsync = ref.watch(currentUserProfilesProvider);
-  final hasOwnerProfile = profilesAsync.asData?.value.any(
+  final hasOwnerProfile =
+      profilesAsync.asData?.value.any(
         (profile) =>
             profile.profileSlug == 'proprietario' ||
             profile.profileSlug == 'cotista',
@@ -80,18 +91,19 @@ final queueAppliedFilterProvider = Provider<String?>((ref) {
   return ownerDefault?.isNotEmpty == true ? ownerDefault : null;
 });
 
-final queueEntriesProvider =
-    FutureProvider<List<LaunchQueueEntry>>((ref) async {
+final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
   final repository = ref.watch(launchQueueRepositoryProvider);
   final marinaId = ref.watch(queueAppliedFilterProvider);
   final entries = await repository.fetchEntries();
   final profiles = await ref.watch(currentUserProfilesProvider.future);
+  final currentUserId = ref.watch(userProvider)?.id ?? '';
 
   final hasAdminProfile = profiles.any(
     (profile) => profile.profileSlug == 'administrador',
   );
-  final hasMarinaProfile =
-      profiles.any((profile) => profile.profileSlug == 'marina');
+  final hasMarinaProfile = profiles.any(
+    (profile) => profile.profileSlug == 'marina',
+  );
   final hasOwnerProfile = profiles.any(
     (profile) =>
         profile.profileSlug == 'proprietario' ||
@@ -103,22 +115,35 @@ final queueEntriesProvider =
   if (marinaId == queueNoMarinaFilterValue) {
     filteredEntries = filteredEntries.where((entry) => entry.marinaId.isEmpty);
   } else if (marinaId != null && marinaId.isNotEmpty) {
-    filteredEntries =
-        filteredEntries.where((entry) => entry.marinaId == marinaId);
+    filteredEntries = filteredEntries.where(
+      (entry) => entry.marinaId == marinaId,
+    );
   }
 
   final shouldLimitStatuses =
       hasOwnerProfile && !hasAdminProfile && !hasMarinaProfile;
   if (shouldLimitStatuses) {
     filteredEntries = filteredEntries.where(
-      (entry) =>
-          entry.isOwnBoat ||
-          entry.status == 'pending' ||
-          entry.status == 'in_progress',
+      (entry) {
+        final isRequester = currentUserId.isNotEmpty &&
+            entry.requestedBy.isNotEmpty &&
+            entry.requestedBy == currentUserId;
+        final isPendingOrInProgress =
+            entry.status == 'pending' || entry.status == 'in_progress';
+
+        return isRequester || isPendingOrInProgress;
+      },
     );
   }
 
-  return filteredEntries.toList();
+  final inWaterCountForSelectedMarina = filteredEntries
+      .where((entry) => entry.status == 'in_water')
+      .length;
+
+  return QueueEntriesState(
+    entries: filteredEntries.toList(),
+    inWaterCountForSelectedMarina: inWaterCountForSelectedMarina,
+  );
 });
 
 final queueOperationInProgressProvider = StateProvider<bool>((ref) => false);

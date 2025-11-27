@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/supabase_providers.dart';
 import '../../boats/domain/boat.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
+import '../../user_profiles/providers.dart';
 import '../data/launch_queue_repository.dart';
 import '../domain/launch_queue_entry.dart';
 import '../providers.dart';
@@ -18,13 +20,31 @@ class QueueCrudPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final entriesAsync = ref.watch(queueEntriesProvider);
     final marinasAsync = ref.watch(marinasProvider);
+    final profilesAsync = ref.watch(currentUserProfilesProvider);
+    final isAdmin = ref.watch(isAdminProvider);
     final isProcessing = ref.watch(queueOperationInProgressProvider);
     final selectedMarinaId = ref.watch(queueAppliedFilterProvider);
     final forcedMarinaId = ref.watch(queueForcedMarinaIdProvider);
+    final currentUserId = ref.watch(userProvider)?.id;
     final hasLockedMarinaFilter = forcedMarinaId != null;
     ref.watch(queueRealtimeSyncProvider);
 
     final marinas = marinasAsync.asData?.value ?? const <Marina>[];
+    final hasOwnerProfile = profilesAsync.maybeWhen(
+      data: (profiles) => profiles.any(
+        (profile) =>
+            profile.profileSlug == 'proprietario' ||
+            profile.profileSlug == 'cotista',
+      ),
+      orElse: () => false,
+    );
+    final hasMarinaProfile = profilesAsync.maybeWhen(
+      data: (profiles) =>
+          profiles.any((profile) => profile.profileSlug == 'marina'),
+      orElse: () => false,
+    );
+    final shouldRestrictOwnerView =
+        hasOwnerProfile && !isAdmin && !hasMarinaProfile;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Fila de embarcações')),
@@ -40,41 +60,80 @@ class QueueCrudPage extends ConsumerWidget {
         label: const Text('Nova entrada'),
       ),
       body: entriesAsync.when(
-        data: (entries) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (!hasLockedMarinaFilter)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _QueueMarinaFilter(
-                  marinas: marinas,
-                  selectedMarinaId: selectedMarinaId,
-                  onChanged: (value) {
-                    ref.read(queueFilterProvider.notifier).state = value;
+        data: (state) {
+          final entries = state.entries;
+          String? selectedMarinaName;
+          if (selectedMarinaId != null &&
+              selectedMarinaId!.isNotEmpty &&
+              selectedMarinaId != queueNoMarinaFilterValue) {
+            for (final marina in marinas) {
+              if (marina.id == selectedMarinaId) {
+                selectedMarinaName = marina.name;
+                break;
+              }
+            }
+          }
+          final showInWaterCount =
+              shouldRestrictOwnerView &&
+              selectedMarinaId != null &&
+              selectedMarinaId!.isNotEmpty &&
+              selectedMarinaId != queueNoMarinaFilterValue;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!hasLockedMarinaFilter)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: _QueueMarinaFilter(
+                    marinas: marinas,
+                    selectedMarinaId: selectedMarinaId,
+                    onChanged: (value) {
+                      ref.read(queueFilterProvider.notifier).state = value;
+                      ref.invalidate(queueEntriesProvider);
+                    },
+                  ),
+                ),
+              if (showInWaterCount)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.water_drop_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Na água em ${selectedMarinaName ?? 'marina selecionada'}: ${state.inWaterCountForSelectedMarina}',
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: _QueueEntriesList(
+                  entries: entries,
+                  isLoading: entriesAsync.isLoading,
+                  actionsEnabled: !isProcessing,
+                  showEditDelete: isAdmin,
+                  showRaiseButton: hasOwnerProfile,
+                  showLaunchButton: hasLockedMarinaFilter,
+                  maskOtherOwnerBoats: shouldRestrictOwnerView,
+                  currentUserId: currentUserId,
+                  onRefresh: () async {
                     ref.invalidate(queueEntriesProvider);
+                    await ref.read(queueEntriesProvider.future);
                   },
+                  onLaunch: hasLockedMarinaFilter
+                      ? (entry) => _startLaunch(context, ref, entry)
+                      : null,
+                  onEdit: (entry) => _openForm(context, ref, entry: entry),
+                  onDelete: (entry) => _deleteEntry(context, ref, entry),
+                  onRaise: hasOwnerProfile
+                      ? (entry) => _raiseBoat(context, ref, entry)
+                      : null,
                 ),
               ),
-            Expanded(
-              child: _QueueEntriesList(
-                entries: entries,
-                isLoading: entriesAsync.isLoading,
-                actionsEnabled: !isProcessing,
-                showEditDelete: !hasLockedMarinaFilter,
-                showLaunchButton: hasLockedMarinaFilter,
-                onRefresh: () async {
-                  ref.invalidate(queueEntriesProvider);
-                  await ref.read(queueEntriesProvider.future);
-                },
-                onLaunch: hasLockedMarinaFilter
-                    ? (entry) => _startLaunch(context, ref, entry)
-                    : null,
-                onEdit: (entry) => _openForm(context, ref, entry: entry),
-                onDelete: (entry) => _deleteEntry(context, ref, entry),
-              ),
-            ),
-          ],
-        ),
+            ],
+          );
+        },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => _QueueErrorState(
           error: error,
@@ -135,8 +194,9 @@ class QueueCrudPage extends ConsumerWidget {
     if (!context.mounted) return;
 
     final currentFilter = ref.read(queueAppliedFilterProvider);
-    final selectedFilterMarina =
-        currentFilter == queueNoMarinaFilterValue ? null : currentFilter;
+    final selectedFilterMarina = currentFilter == queueNoMarinaFilterValue
+        ? null
+        : currentFilter;
 
     final result = await showDialog<_QueueEntryFormResult>(
       context: context,
@@ -173,12 +233,9 @@ class QueueCrudPage extends ConsumerWidget {
         await repository.updateEntry(
           entryId: entry.id,
           marinaId: result.clearMarina ? '' : result.marinaId,
-          boatId: result.clearBoat
-              ? ''
-              : (result.boatId ?? entry.boatId),
+          boatId: result.clearBoat ? '' : (result.boatId ?? entry.boatId),
           status: result.status,
-          processedAt:
-              result.status == 'pending' ? null : DateTime.now(),
+          processedAt: result.status == 'pending' ? null : DateTime.now(),
           clearProcessedAt: result.status == 'pending',
           genericBoatName: result.genericBoatName ?? '',
         );
@@ -200,16 +257,14 @@ class QueueCrudPage extends ConsumerWidget {
       }
     } on ArgumentError catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível salvar a entrada: $error'),
-          ),
+          SnackBar(content: Text('Não foi possível salvar a entrada: $error')),
         );
       }
     } finally {
@@ -235,10 +290,7 @@ class QueueCrudPage extends ConsumerWidget {
     final repository = ref.read(launchQueueRepositoryProvider);
 
     try {
-      await repository.updateEntry(
-        entryId: entry.id,
-        status: 'in_progress',
-      );
+      await repository.updateEntry(entryId: entry.id, status: 'in_progress');
 
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
@@ -384,8 +436,51 @@ class QueueCrudPage extends ConsumerWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível remover a entrada: $error')),
+        );
+      }
+    } finally {
+      notifier.state = false;
+    }
+  }
+
+  Future<void> _raiseBoat(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (ref.read(queueOperationInProgressProvider)) {
+      return;
+    }
+
+    final notifier = ref.read(queueOperationInProgressProvider.notifier);
+    notifier.state = true;
+
+    final repository = ref.read(launchQueueRepositoryProvider);
+
+    try {
+      await repository.updateEntry(
+        entryId: entry.id,
+        status: 'completed',
+        processedAt: DateTime.now(),
+      );
+      ref.invalidate(queueEntriesProvider);
+      await ref.read(queueEntriesProvider.future);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Não foi possível remover a entrada: $error'),
+            content: Text(
+              'Pedido de subida registrado para "${entry.displayBoatName}".',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível registrar a subida: $error'),
           ),
         );
       }
@@ -401,22 +496,30 @@ class _QueueEntriesList extends StatelessWidget {
     required this.isLoading,
     required this.actionsEnabled,
     required this.showEditDelete,
+    required this.showRaiseButton,
     required this.showLaunchButton,
+    required this.maskOtherOwnerBoats,
+    required this.currentUserId,
     required this.onRefresh,
     required this.onEdit,
     required this.onDelete,
     this.onLaunch,
+    this.onRaise,
   });
 
   final List<LaunchQueueEntry> entries;
   final bool isLoading;
   final bool actionsEnabled;
   final bool showEditDelete;
+  final bool showRaiseButton;
   final bool showLaunchButton;
+  final bool maskOtherOwnerBoats;
+  final String? currentUserId;
   final Future<void> Function() onRefresh;
   final void Function(LaunchQueueEntry entry) onEdit;
   final void Function(LaunchQueueEntry entry) onDelete;
   final void Function(LaunchQueueEntry entry)? onLaunch;
+  final void Function(LaunchQueueEntry entry)? onRaise;
 
   @override
   Widget build(BuildContext context) {
@@ -453,18 +556,43 @@ class _QueueEntriesList extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         itemBuilder: (context, index) {
           final entry = entries[index];
-          final subtitleLines = _buildSubtitleLines(entry);
+          final isDifferentUserRequest =
+              currentUserId == null ||
+              currentUserId!.isEmpty ||
+              entry.requestedBy != currentUserId;
+          final isMasked = maskOtherOwnerBoats && isDifferentUserRequest;
+          final subtitleLines = _buildSubtitleLines(entry, masked: isMasked);
           final cardColor = _cardColor(entry.status, theme);
           final trailingChildren = <Widget>[];
+
+          if (showRaiseButton &&
+              onRaise != null &&
+              entry.isOwnBoat &&
+              entry.status == 'in_water') {
+            trailingChildren.add(
+              FilledButton.tonal(
+                onPressed: actionsEnabled ? () => onRaise!(entry) : null,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('Subir'),
+              ),
+            );
+          }
 
           if (showLaunchButton && onLaunch != null) {
             trailingChildren.add(
               FilledButton.tonal(
-                onPressed:
-                    actionsEnabled ? () => onLaunch!(entry) : null,
+                onPressed: actionsEnabled ? () => onLaunch!(entry) : null,
                 style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   visualDensity: VisualDensity.compact,
                 ),
                 child: const Text('Descer'),
@@ -490,9 +618,9 @@ class _QueueEntriesList extends StatelessWidget {
           return Card(
             color: cardColor,
             child: ListTile(
-              leading: _QueueEntryAvatar(entry: entry),
+              leading: _QueueEntryAvatar(entry: entry, forceBoatIcon: isMasked),
               title: Text(
-                entry.displayBoatName,
+                isMasked ? 'Embarcação' : entry.displayBoatName,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               subtitle: Text(
@@ -501,10 +629,7 @@ class _QueueEntriesList extends StatelessWidget {
               ),
               trailing: trailingChildren.isEmpty
                   ? null
-                  : Wrap(
-                      spacing: 8,
-                      children: trailingChildren,
-                    ),
+                  : Wrap(spacing: 8, children: trailingChildren),
             ),
           );
         },
@@ -514,8 +639,18 @@ class _QueueEntriesList extends StatelessWidget {
     );
   }
 
-  List<String> _buildSubtitleLines(LaunchQueueEntry entry) {
+  List<String> _buildSubtitleLines(
+    LaunchQueueEntry entry, {
+    required bool masked,
+  }) {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+    if (masked) {
+      return [
+        'Status: ${_translateStatus(entry.status)}',
+        'Entrada: ${dateFormat.format(entry.requestedAt)}',
+      ];
+    }
+
     final lines = <String>[
       'Marina: ${entry.displayMarinaName}',
       'Status: ${_translateStatus(entry.status)}',
@@ -560,21 +695,29 @@ class _QueueEntriesList extends StatelessWidget {
 }
 
 class _QueueEntryAvatar extends StatelessWidget {
-  const _QueueEntryAvatar({required this.entry});
+  const _QueueEntryAvatar({required this.entry, this.forceBoatIcon = false});
 
   final LaunchQueueEntry entry;
+  final bool forceBoatIcon;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasPhoto = entry.hasBoatPhoto;
+    final hasPhoto = !forceBoatIcon && entry.hasBoatPhoto;
     final radius = 26.0;
     final placeholderColor = theme.colorScheme.primaryContainer;
     final placeholderForeground = theme.colorScheme.onPrimaryContainer;
 
     Widget avatarContent;
 
-    if (hasPhoto) {
+    if (forceBoatIcon) {
+      avatarContent = CircleAvatar(
+        radius: radius,
+        backgroundColor: placeholderColor,
+        foregroundColor: placeholderForeground,
+        child: const Icon(Icons.directions_boat_filled),
+      );
+    } else if (hasPhoto) {
       avatarContent = CircleAvatar(
         radius: radius,
         backgroundImage: NetworkImage(entry.boatPhotoUrl!),
@@ -674,7 +817,8 @@ class _QueueMarinaFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasSelectedMarina = selectedMarinaId != null &&
+    final hasSelectedMarina =
+        selectedMarinaId != null &&
         (selectedMarinaId == queueNoMarinaFilterValue ||
             marinas.any((marina) => marina.id == selectedMarinaId));
     final effectiveSelected = hasSelectedMarina ? selectedMarinaId : null;
@@ -743,8 +887,7 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
     }
 
     final boatId = widget.entry?.boatId;
-    _selectedBoatId =
-        (boatId != null && boatId.isNotEmpty) ? boatId : null;
+    _selectedBoatId = (boatId != null && boatId.isNotEmpty) ? boatId : null;
 
     _selectedStatus = widget.entry?.status ?? _statusOptions.first.value;
     if (!_statusOptions.any((option) => option.value == _selectedStatus)) {
@@ -767,9 +910,7 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
     final boats = _boatsForSelectedMarina();
 
     return AlertDialog(
-      title: Text(
-        widget.entry == null ? 'Nova entrada' : 'Editar entrada',
-      ),
+      title: Text(widget.entry == null ? 'Nova entrada' : 'Editar entrada'),
       content: SingleChildScrollView(
         child: Form(
           key: _formKey,
@@ -901,10 +1042,11 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
         ..sort((a, b) => a.name.compareTo(b.name));
       return all;
     }
-    final filtered = widget.boats
-        .where((boat) => boat.marinaId == _selectedMarinaId)
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final filtered =
+        widget.boats
+            .where((boat) => boat.marinaId == _selectedMarinaId)
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
     return filtered;
   }
 
@@ -926,8 +1068,7 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
     }
 
     final description = _descriptionController.text.trim();
-    final hasBoat =
-        _selectedBoatId != null && _selectedBoatId!.isNotEmpty;
+    final hasBoat = _selectedBoatId != null && _selectedBoatId!.isNotEmpty;
     final hasMarina =
         _selectedMarinaId != null && _selectedMarinaId!.isNotEmpty;
     if (!hasBoat && description.isEmpty) {
