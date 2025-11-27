@@ -944,6 +944,22 @@ class _QueueEntryAvatar extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(child: avatarContent),
+          if (entry.status == 'in_progress')
+            Positioned(
+              top: -2,
+              right: -2,
+              child: CircleAvatar(
+                radius: 13,
+                backgroundColor: theme.colorScheme.secondaryContainer,
+                foregroundColor: theme.colorScheme.onSecondaryContainer,
+                child: Icon(
+                  _inProgressPreviousStatuses[entry.id] == 'in_water'
+                      ? Icons.arrow_upward
+                      : Icons.arrow_downward,
+                  size: 16,
+                ),
+              ),
+            ),
           if (entry.status != 'in_water')
             Positioned(
               bottom: -2,
