@@ -36,6 +36,13 @@ type BoatRecipientRow = {
   co_owner_ids?: (string | null)[];
 };
 
+type MarinaProfileRow = {
+  user_id?: string | null;
+  profile_types?: {
+    slug?: string | null;
+  } | null;
+};
+
 const jsonHeaders = {
   ...corsHeaders,
   'Content-Type': 'application/json',
@@ -117,7 +124,22 @@ serve(async (req) => {
       );
     }
 
+    const { data: marinaProfiles, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('user_id, profile_types!inner(slug)')
+        .eq('marina_id', marinaId)
+        .in('profile_types.slug', ['marina', 'gestor_marina']);
+
+    if (profilesError) {
+      console.error('Error loading marina profile users', profilesError);
+      return new Response(
+        JSON.stringify({ error: 'Could not load marina profile users.' }),
+        { status: 500, headers: jsonHeaders },
+      );
+    }
+
     const recipientIds = collectRecipientIds(boats ?? []);
+    addMarinaProfileRecipients(recipientIds, marinaProfiles ?? []);
     if (recipientIds.size === 0) {
       return new Response(
         JSON.stringify({
@@ -267,6 +289,20 @@ function collectRecipientIds(rows: BoatRecipientRow[]): Set<string> {
   return ids;
 }
 
+function addMarinaProfileRecipients(
+  ids: Set<string>,
+  profiles: MarinaProfileRow[],
+): void {
+  for (const profile of profiles) {
+    const slug = profile.profile_types?.slug?.toString().trim().toLowerCase();
+    const userId = profile.user_id;
+    if (!userId || !slug) continue;
+    if (slug === 'marina' || slug === 'gestor_marina') {
+      ids.add(String(userId));
+    }
+  }
+}
+
 function resolveTypeLabel(type: string | null | undefined): string {
   const normalized = (type ?? '').trim().toLowerCase();
   switch (normalized) {
@@ -332,6 +368,18 @@ async function sendFcmNotifications({
           body,
         },
         data,
+        android: {
+          notification: {
+            sound: 'default',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+            },
+          },
+        },
       },
     };
 

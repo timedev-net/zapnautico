@@ -46,9 +46,9 @@ class LaunchQueueRepository {
     entries.sort((a, b) {
       int statusOrder(String status) {
         switch (status) {
-          case 'pending':
-            return 0;
           case 'in_progress':
+            return 0;
+          case 'pending':
             return 1;
           case 'in_water':
             return 2;

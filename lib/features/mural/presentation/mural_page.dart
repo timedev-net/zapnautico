@@ -157,7 +157,7 @@ class _HeaderSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Mural das marinas',
+                'Mural de informações',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
@@ -238,13 +238,6 @@ class _MuralCard extends StatelessWidget {
                   child: const Center(child: Icon(Icons.broken_image)),
                 ),
               ),
-            )
-          else
-            Container(
-              height: 180,
-              width: double.infinity,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Center(child: Icon(Icons.photo_outlined, size: 48)),
             ),
           Padding(
             padding: const EdgeInsets.all(16),
