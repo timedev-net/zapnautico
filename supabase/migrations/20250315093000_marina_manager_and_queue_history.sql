@@ -1,0 +1,190 @@
+-- Add marina manager profile and expose full queue history
+
+insert into public.profile_types (slug, name, description)
+values (
+  'gestor_marina',
+  'Gestor de Marina',
+  'Acompanha e gerencia a movimentação da marina.'
+)
+on conflict (slug) do update
+set name = excluded.name,
+    description = excluded.description;
+
+create or replace function public.has_profile_for_marina(
+  profile_slug text,
+  target_marina uuid,
+  user_id uuid default auth.uid()
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1
+    from public.user_profiles up
+    join public.profile_types pt on pt.id = up.profile_type_id
+    where up.user_id = coalesce(user_id, auth.uid())
+      and up.marina_id = target_marina
+      and (
+        pt.slug = profile_slug
+        or (
+          profile_slug in ('marina', 'gestor_marina')
+          and pt.slug in ('marina', 'gestor_marina')
+        )
+      )
+  );
+$$;
+
+create or replace function public.admin_set_user_profiles(
+  target_user uuid,
+  profile_payloads jsonb default '[]'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  payload jsonb;
+  slug_value text;
+  marina_value uuid;
+  profile_type_uuid uuid;
+  selected_profile_ids uuid[];
+begin
+  if not is_admin() then
+    raise exception 'Insufficient privileges';
+  end if;
+
+  if target_user is null then
+    raise exception 'Target user is required';
+  end if;
+
+  if profile_payloads is null
+     or jsonb_typeof(profile_payloads) <> 'array'
+     or jsonb_array_length(profile_payloads) = 0 then
+    delete from public.user_profiles where user_id = target_user;
+    return;
+  end if;
+
+  select coalesce(array_agg(distinct pt.id), array[]::uuid[])
+  into selected_profile_ids
+  from jsonb_array_elements(profile_payloads) as arr(elem)
+  join public.profile_types pt on pt.slug = arr.elem->>'slug';
+
+  if selected_profile_ids is null
+     or array_length(selected_profile_ids, 1) is null then
+    delete from public.user_profiles where user_id = target_user;
+  else
+    delete from public.user_profiles up
+    where up.user_id = target_user
+      and up.profile_type_id <> all(selected_profile_ids);
+  end if;
+
+  for payload in select jsonb_array_elements(profile_payloads)
+  loop
+    slug_value := payload->>'slug';
+
+    if slug_value is null then
+      continue;
+    end if;
+
+    select id
+    into profile_type_uuid
+    from public.profile_types
+    where slug = slug_value
+    limit 1;
+
+    if profile_type_uuid is null then
+      raise exception 'Perfil "%" não encontrado.', slug_value;
+    end if;
+
+    marina_value := null;
+
+    if slug_value in ('marina', 'gestor_marina') then
+      marina_value := (payload->>'marina_id')::uuid;
+
+      if marina_value is null then
+        raise exception 'Marina é obrigatória para o perfil "%".', slug_value;
+      end if;
+    end if;
+
+    insert into public.user_profiles (user_id, profile_type_id, assigned_by, marina_id)
+    values (target_user, profile_type_uuid, auth.uid(), marina_value)
+    on conflict (user_id, profile_type_id) do update
+      set marina_id = excluded.marina_id,
+          assigned_by = excluded.assigned_by;
+  end loop;
+end;
+$$;
+
+drop view if exists public.boat_launch_queue_view;
+
+create or replace view public.boat_launch_queue_view as
+with photo as (
+  select
+    bp.boat_id,
+    bp.public_url,
+    row_number() over (
+      partition by bp.boat_id
+      order by bp.position nulls last, bp.created_at
+    ) as photo_rank
+  from public.boat_photos bp
+),
+positions as (
+  select
+    q.id,
+    row_number() over (
+      partition by coalesce(
+        q.marina_id,
+        '00000000-0000-0000-0000-000000000000'::uuid
+      )
+      order by q.requested_at
+    ) as queue_position
+  from public.boat_launch_queue q
+  where q.status in ('pending', 'in_progress')
+)
+select
+  q.id,
+  q.boat_id,
+  q.generic_boat_name,
+  q.marina_id,
+  m.name as marina_name,
+  q.requested_by,
+  public.user_email(q.requested_by) as requested_by_email,
+  public.user_full_name(q.requested_by) as requested_by_name,
+  q.status,
+  q.requested_at,
+  q.processed_at,
+  p2.queue_position,
+  b.name as boat_name,
+  p.public_url as boat_photo_url,
+  case
+    when q.boat_id is null then q.generic_boat_name
+    when public.can_manage_boat(q.boat_id)
+      or public.has_profile_for_marina('marina', q.marina_id)
+      or public.is_admin()
+    then b.name
+    else null
+  end as visible_boat_name,
+  case
+    when q.boat_id is null then null
+    when public.can_manage_boat(q.boat_id)
+      or public.has_profile_for_marina('marina', q.marina_id)
+      or public.is_admin()
+    then b.primary_owner_name
+    else null
+  end as visible_owner_name,
+  coalesce(
+    case when q.boat_id is not null then public.can_manage_boat(q.boat_id) end,
+    false
+  ) as is_own_boat,
+  public.has_profile_for_marina('marina', q.marina_id) as is_marina_user
+from public.boat_launch_queue q
+left join public.boats_detailed b on b.id = q.boat_id
+left join photo p on p.boat_id = q.boat_id and p.photo_rank = 1
+left join public.marinas m on m.id = q.marina_id
+left join positions p2 on p2.id = q.id;
+
+alter view public.boat_launch_queue_view set (security_invoker = true);

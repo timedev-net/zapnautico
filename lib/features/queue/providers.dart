@@ -5,7 +5,7 @@ import '../../core/supabase_providers.dart';
 import '../boats/data/boat_repository.dart';
 import '../boats/domain/boat.dart';
 import '../boats/providers.dart';
-import '../user_profiles/domain/profile_models.dart';
+import '../user_profiles/domain/marina_roles.dart';
 import '../user_profiles/providers.dart';
 import 'data/launch_queue_repository.dart';
 import 'domain/launch_queue_entry.dart';
@@ -34,13 +34,10 @@ final queueForcedMarinaIdProvider = Provider<String?>((ref) {
       );
       if (isAdmin) return null;
 
-      for (final UserProfileAssignment profile in profiles) {
-        final marinaId = profile.marinaId;
-        final hasMarina = marinaId != null && marinaId.isNotEmpty;
-        if (profile.profileSlug == 'marina' && hasMarina) {
-          return marinaId;
-        }
-      }
+      final marinaProfile = firstMarinaProfile(profiles);
+      final marinaId = marinaProfile?.marinaId;
+      final hasMarina = marinaId != null && marinaId.isNotEmpty;
+      if (hasMarina) return marinaId;
       return null;
     },
     orElse: () => null,
@@ -93,21 +90,30 @@ final queueAppliedFilterProvider = Provider<String?>((ref) {
 
 final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
   final repository = ref.watch(launchQueueRepositoryProvider);
-  final marinaId = ref.watch(queueAppliedFilterProvider);
-  final entries = await repository.fetchEntries();
   final profiles = await ref.watch(currentUserProfilesProvider.future);
   final currentUserId = ref.watch(userProvider)?.id ?? '';
 
   final hasAdminProfile = profiles.any(
     (profile) => profile.profileSlug == 'administrador',
   );
-  final hasMarinaProfile = profiles.any(
-    (profile) => profile.profileSlug == 'marina',
-  );
+  final hasMarinaProfile = hasMarinaRole(profiles);
   final hasOwnerProfile = profiles.any(
     (profile) =>
         profile.profileSlug == 'proprietario' ||
         profile.profileSlug == 'cotista',
+  );
+
+  final now = DateTime.now();
+  final DateTime? fromDate = hasMarinaProfile
+      ? DateTime(now.year, now.month, now.day)
+      : null;
+  final String? marinaFilter =
+      hasMarinaProfile ? ref.watch(queueForcedMarinaIdProvider) : null;
+
+  final marinaId = ref.watch(queueAppliedFilterProvider);
+  final entries = await repository.fetchEntries(
+    marinaId: marinaFilter,
+    fromDate: fromDate,
   );
 
   Iterable<LaunchQueueEntry> filteredEntries = entries;
@@ -134,6 +140,17 @@ final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
         return isRequester || isPendingOrInProgress;
       },
     );
+  }
+
+  if (hasMarinaProfile) {
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = todayStart.add(const Duration(days: 1));
+
+    filteredEntries = filteredEntries.where((entry) {
+      final requestedAtLocal = entry.requestedAt.toLocal();
+      return !requestedAtLocal.isBefore(todayStart) &&
+          requestedAtLocal.isBefore(todayEnd);
+    });
   }
 
   final inWaterCountForSelectedMarina = filteredEntries
@@ -190,4 +207,43 @@ final queueRealtimeSyncProvider = Provider.autoDispose<void>((ref) {
       await client.removeChannel(channel);
     } catch (_) {}
   });
+});
+
+class MarinaQueueDashboardData {
+  const MarinaQueueDashboardData({
+    required this.entries,
+    required this.marinaName,
+    required this.rangeStart,
+  });
+
+  final List<LaunchQueueEntry> entries;
+  final String marinaName;
+  final DateTime rangeStart;
+}
+
+final marinaQueueDashboardProvider =
+    FutureProvider<MarinaQueueDashboardData>((ref) async {
+  final profiles = await ref.watch(currentUserProfilesProvider.future);
+  final marinaProfile = firstMarinaProfile(profiles);
+  if (marinaProfile == null ||
+      marinaProfile.marinaId == null ||
+      marinaProfile.marinaId!.isEmpty) {
+    throw StateError('Nenhuma marina vinculada ao seu perfil.');
+  }
+
+  final repository = ref.watch(launchQueueRepositoryProvider);
+  final now = DateTime.now();
+  final rangeStart = DateTime(now.year, now.month, now.day)
+      .subtract(const Duration(days: 13));
+
+  final entries = await repository.fetchEntries(
+    marinaId: marinaProfile.marinaId,
+    fromDate: rangeStart,
+  );
+
+  return MarinaQueueDashboardData(
+    entries: entries,
+    marinaName: marinaProfile.marinaName ?? '',
+    rangeStart: rangeStart,
+  );
 });

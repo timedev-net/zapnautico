@@ -8,6 +8,7 @@ import '../../admin/presentation/admin_user_management_page.dart';
 import '../../boats/presentation/boat_list_page.dart';
 import '../../marinas/presentation/marina_list_page.dart';
 import '../../user_profiles/domain/profile_models.dart';
+import '../../user_profiles/domain/marina_roles.dart';
 import '../../user_profiles/providers.dart';
 import '../data/user_contact_repository.dart';
 import '../domain/user_contact_channel.dart';
@@ -29,9 +30,7 @@ class ProfilePage extends ConsumerWidget {
           profile.profileSlug == 'proprietario' ||
           profile.profileSlug == 'cotista',
     );
-    final hasMarinaProfile = profileList.any(
-      (profile) => profile.profileSlug == 'marina',
-    );
+    final hasMarinaProfile = hasMarinaRole(profileList);
 
     return authState.when(
       data: (session) {
@@ -168,7 +167,7 @@ class ProfilePage extends ConsumerWidget {
                     for (final profile in profiles)
                       Chip(
                         label: Text(
-                          profile.profileSlug == 'marina' &&
+                          isMarinaRoleSlug(profile.profileSlug) &&
                                   profile.marinaName != null &&
                                   profile.marinaName!.isNotEmpty
                               ? '${profile.profileName} - ${profile.marinaName}'

@@ -8,6 +8,8 @@ import '../../financial/presentation/financial_management_page.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
 import '../../queue/data/launch_queue_repository.dart';
+import '../../queue/presentation/marina_queue_dashboard_page.dart';
+import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -19,6 +21,31 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   final Set<String> _launchingBoatIds = {};
+
+  Future<void> _openMarinaDashboard(
+    BuildContext context,
+    UserProfileAssignment profile,
+  ) async {
+    final marinaId = profile.marinaId;
+    if (marinaId == null || marinaId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Associe uma marina ao perfil de gestor para acessar o dashboard.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const MarinaQueueDashboardPage(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +62,15 @@ class _HomePageState extends ConsumerState<HomePage> {
       ),
       orElse: () => false,
     );
+    final profiles =
+        profilesAsync.asData?.value ?? const <UserProfileAssignment>[];
+    UserProfileAssignment? marinaManagerProfile;
+    for (final profile in profiles) {
+      if (profile.profileSlug == 'gestor_marina') {
+        marinaManagerProfile = profile;
+        break;
+      }
+    }
 
     return Center(
       child: SingleChildScrollView(
@@ -62,6 +98,15 @@ class _HomePageState extends ConsumerState<HomePage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
+            if (marinaManagerProfile != null) ...[
+              FilledButton.icon(
+                onPressed: () =>
+                    _openMarinaDashboard(context, marinaManagerProfile!),
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('Dashboard da marina'),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (canAccessFinancial) ...[
               FilledButton.icon(
                 onPressed: () => Navigator.of(context).push(

@@ -13,10 +13,12 @@ import '../../boats/presentation/boat_gallery_page.dart';
 import '../../boats/providers.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
+import '../../user_profiles/domain/marina_roles.dart';
 import '../../user_profiles/providers.dart';
 import '../data/launch_queue_repository.dart';
 import '../domain/launch_queue_entry.dart';
 import '../providers.dart';
+import 'queue_entry_gallery_page.dart';
 
 final _scheduledStatusTimers = <String, Timer>{};
 final _inProgressPreviousStatuses = <String, String>{};
@@ -27,7 +29,7 @@ final _queueStatusTabProvider = StateProvider.autoDispose<_QueueStatusTab>(
   (ref) => _QueueStatusTab.pending,
 );
 
-enum _MarinaEntryMenuAction { viewDetails, cancel }
+enum _MarinaEntryMenuAction { viewDetails, viewPhotos, cancel }
 
 class QueueCrudPage extends ConsumerWidget {
   const QueueCrudPage({super.key, this.showAppBar = true});
@@ -59,7 +61,7 @@ class QueueCrudPage extends ConsumerWidget {
     );
     final hasMarinaProfile = profilesAsync.maybeWhen(
       data: (profiles) =>
-          profiles.any((profile) => profile.profileSlug == 'marina'),
+          hasMarinaRole(profiles),
       orElse: () => false,
     );
     final shouldRestrictOwnerView =
@@ -172,6 +174,8 @@ class QueueCrudPage extends ConsumerWidget {
                   onRaise: hasOwnerProfile
                       ? (entry) => _raiseBoat(context, ref, entry)
                       : null,
+                  onOpenQueueEntryPhotos: (entry) =>
+                      _openQueueEntryPhotos(context, entry),
                   onOpenBoatGallery: hasMarinaProfile
                       ? (entry) => _openBoatGallery(context, ref, entry)
                       : null,
@@ -203,8 +207,7 @@ class QueueCrudPage extends ConsumerWidget {
 
     final profiles = ref.read(currentUserProfilesProvider);
     final hasMarinaProfile = profiles.maybeWhen(
-      data: (profiles) =>
-          profiles.any((profile) => profile.profileSlug == 'marina'),
+      data: (profiles) => hasMarinaRole(profiles),
       orElse: () => false,
     );
     final forcedMarinaId = ref.read(queueForcedMarinaIdProvider);
@@ -406,22 +409,35 @@ class QueueCrudPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _openMarinaEntryMenu(
+  Future<void> _openQueueEntryPhotos(
     BuildContext context,
-    WidgetRef ref,
     LaunchQueueEntry entry,
   ) async {
-    if (entry.boatId.isEmpty) {
+    if (entry.queuePhotos.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registro sem embarcação vinculada.'),
-          ),
+          const SnackBar(content: Text('Registro sem fotos anexadas.')),
         );
       }
       return;
     }
 
+    if (!context.mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QueueEntryGalleryPage(
+          photos: entry.queuePhotos,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMarinaEntryMenu(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
     final action = await showModalBottomSheet<_MarinaEntryMenuAction>(
       context: context,
       builder: (sheetContext) {
@@ -429,13 +445,22 @@ class QueueCrudPage extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(Icons.directions_boat_filled),
-                title: const Text('Ver detalhes da embarcação'),
-                onTap: () => Navigator.of(sheetContext).pop(
-                  _MarinaEntryMenuAction.viewDetails,
+              if (entry.boatId.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.directions_boat_filled),
+                  title: const Text('Ver detalhes da embarcação'),
+                  onTap: () => Navigator.of(sheetContext).pop(
+                    _MarinaEntryMenuAction.viewDetails,
+                  ),
                 ),
-              ),
+              if (entry.hasQueuePhotos)
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Ver fotos do registro'),
+                  onTap: () => Navigator.of(sheetContext).pop(
+                    _MarinaEntryMenuAction.viewPhotos,
+                  ),
+                ),
               ListTile(
                 leading: const Icon(Icons.cancel_outlined),
                 title: const Text('Cancelar'),
@@ -457,6 +482,9 @@ class QueueCrudPage extends ConsumerWidget {
           builder: (_) => BoatDetailPage(boatId: entry.boatId),
         ),
       );
+    } else if (action == _MarinaEntryMenuAction.viewPhotos) {
+      if (!context.mounted) return;
+      await _openQueueEntryPhotos(context, entry);
     } else if (action == _MarinaEntryMenuAction.cancel) {
       if (!context.mounted) return;
       await _cancelQueueEntry(context, ref, entry);
@@ -1082,6 +1110,7 @@ class _QueueEntriesList extends StatelessWidget {
     this.onLift,
     this.onCancel,
     this.onOpenBoatGallery,
+    this.onOpenQueueEntryPhotos,
     this.onOpenEntryMenu,
   });
 
@@ -1101,6 +1130,7 @@ class _QueueEntriesList extends StatelessWidget {
   final void Function(LaunchQueueEntry entry)? onLift;
   final void Function(LaunchQueueEntry entry)? onCancel;
   final void Function(LaunchQueueEntry entry)? onOpenBoatGallery;
+  final void Function(LaunchQueueEntry entry)? onOpenQueueEntryPhotos;
   final void Function(LaunchQueueEntry entry)? onOpenEntryMenu;
 
   @override
@@ -1147,13 +1177,24 @@ class _QueueEntriesList extends StatelessWidget {
               entry.boatId.isNotEmpty &&
               !isMasked &&
               entry.userCanSeeDetails;
+          final canOpenQueueGallery = onOpenQueueEntryPhotos != null &&
+              entry.hasQueuePhotos &&
+              !isMasked;
           final canOpenMenu = onOpenEntryMenu != null &&
-              entry.boatId.isNotEmpty &&
               !isMasked &&
-              entry.userCanSeeDetails;
+              (entry.boatId.isNotEmpty ? entry.userCanSeeDetails : entry.isMarinaUser);
           final subtitleLines = _buildSubtitleLines(entry, masked: isMasked);
           final cardColor = _cardColor(entry.status, theme);
           final trailingChildren = <Widget>[];
+          final VoidCallback? avatarTap;
+
+          if (canOpenGallery) {
+            avatarTap = () => onOpenBoatGallery!(entry);
+          } else if (canOpenQueueGallery) {
+            avatarTap = () => onOpenQueueEntryPhotos!(entry);
+          } else {
+            avatarTap = null;
+          }
 
           if (showRaiseButton &&
               onRaise != null &&
@@ -1233,8 +1274,7 @@ class _QueueEntriesList extends StatelessWidget {
               leading: _QueueEntryAvatar(
                 entry: entry,
                 forceBoatIcon: isMasked,
-                onTap:
-                    canOpenGallery ? () => onOpenBoatGallery!(entry) : null,
+                onTap: avatarTap,
               ),
               title: Text(
                 isMasked ? 'Embarcação' : entry.displayBoatName,
@@ -1263,17 +1303,29 @@ class _QueueEntriesList extends StatelessWidget {
   }) {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
     if (masked) {
-      return [
+      final lines = [
         'Status: ${_translateStatus(entry.status)}',
-        'Entrada: ${dateFormat.format(entry.requestedAt)}',
+        'Entrada: ${dateFormat.format(entry.requestedAt.toLocal())}',
       ];
+      if (entry.processedAt != null &&
+          entry.status != 'pending' &&
+          entry.status != 'in_progress') {
+        lines.add('Atualizado: ${dateFormat.format(entry.processedAt!.toLocal())}');
+      }
+      return lines;
     }
 
     final lines = <String>[
       'Marina: ${entry.displayMarinaName}',
       'Status: ${_translateStatus(entry.status)}',
-      'Entrada: ${dateFormat.format(entry.requestedAt)}',
+      'Entrada: ${dateFormat.format(entry.requestedAt.toLocal())}',
     ];
+
+    if (entry.processedAt != null &&
+        entry.status != 'pending' &&
+        entry.status != 'in_progress') {
+      lines.add('Atualizado: ${dateFormat.format(entry.processedAt!.toLocal())}');
+    }
 
     if (entry.isGenericEntry) {
       lines.add('Tipo: Entrada genérica');
@@ -1327,6 +1379,7 @@ class _QueueEntryAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hasPhoto = !forceBoatIcon && entry.hasBoatPhoto;
+    final hasQueuePhoto = !forceBoatIcon && entry.hasQueuePhotos;
     final radius = 26.0;
     final placeholderColor = theme.colorScheme.primaryContainer;
     final placeholderForeground = theme.colorScheme.onPrimaryContainer;
@@ -1344,6 +1397,12 @@ class _QueueEntryAvatar extends StatelessWidget {
       avatarContent = CircleAvatar(
         radius: radius,
         backgroundImage: NetworkImage(entry.boatPhotoUrl!),
+        backgroundColor: theme.colorScheme.surfaceContainerHighest,
+      );
+    } else if (hasQueuePhoto && entry.queuePrimaryPhotoUrl != null) {
+      avatarContent = CircleAvatar(
+        radius: radius,
+        backgroundImage: NetworkImage(entry.queuePrimaryPhotoUrl!),
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
       );
     } else if (entry.isGenericEntry) {
@@ -1384,7 +1443,8 @@ class _QueueEntryAvatar extends StatelessWidget {
               ),
             ),
           ),
-        if (entry.status != 'in_water')
+        if ((entry.status == 'pending' || entry.status == 'in_progress') &&
+            entry.queuePosition > 0)
           Positioned(
             bottom: -2,
             right: -2,

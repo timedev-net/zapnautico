@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/supabase_providers.dart';
 import '../user_profiles/domain/profile_models.dart';
+import '../user_profiles/domain/marina_roles.dart';
 import '../user_profiles/providers.dart';
 import 'data/boat_repository.dart';
 import 'domain/boat.dart';
@@ -24,7 +25,8 @@ final boatsProvider = FutureProvider<List<Boat>>((ref) async {
   String? marinaId;
   if (!isAdmin) {
     for (final profile in profiles) {
-      if (profile.profileSlug == 'marina' && profile.marinaId != null) {
+      if (isMarinaRoleSlug(profile.profileSlug) &&
+          profile.marinaId != null) {
         marinaId = profile.marinaId;
         break;
       }

@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/supabase_providers.dart';
 import '../domain/launch_queue_entry.dart';
+import '../domain/launch_queue_photo.dart';
 
 class LaunchQueueRepository {
   LaunchQueueRepository(this._client);
@@ -14,24 +15,61 @@ class LaunchQueueRepository {
   static const _bucket = 'boat_launch_queue_photos';
   static const _uuid = Uuid();
 
-  Future<List<LaunchQueueEntry>> fetchEntries() async {
-    final response = await _client
-        .from('boat_launch_queue_view')
-        .select()
-        .order('queue_position', ascending: true);
+  Future<List<LaunchQueueEntry>> fetchEntries({
+    String? marinaId,
+    DateTime? fromDate,
+  }) async {
+    var query = _client.from('boat_launch_queue_view').select();
+
+    if (marinaId != null && marinaId.isNotEmpty) {
+      query = query.eq('marina_id', marinaId);
+    }
+
+    if (fromDate != null) {
+      query = query.gte('requested_at', fromDate.toUtc().toIso8601String());
+    }
+
+    final response = await query.order('requested_at', ascending: true);
 
     final data = (response as List).cast<Map<String, dynamic>>();
-    final entries = data.map(LaunchQueueEntry.fromMap).toList();
+    final baseEntries = data.map(LaunchQueueEntry.fromMap).toList();
+    final photosByEntry = await _fetchQueuePhotos(baseEntries);
+    final entries = baseEntries
+        .map(
+          (entry) => photosByEntry[entry.id] == null
+              ? entry
+              : entry.withQueuePhotos(photosByEntry[entry.id]!),
+        )
+        .toList();
 
     entries.sort((a, b) {
-      final aInWater = a.status == 'in_water';
-      final bInWater = b.status == 'in_water';
-      if (aInWater != bInWater) return aInWater ? 1 : -1;
+      int statusOrder(String status) {
+        switch (status) {
+          case 'pending':
+            return 0;
+          case 'in_progress':
+            return 1;
+          case 'in_water':
+            return 2;
+          case 'completed':
+            return 3;
+          case 'cancelled':
+            return 4;
+          default:
+            return 5;
+        }
+      }
+
+      final statusComparison =
+          statusOrder(a.status).compareTo(statusOrder(b.status));
+      if (statusComparison != 0) return statusComparison;
 
       final positionComparison = a.queuePosition.compareTo(b.queuePosition);
       if (positionComparison != 0) return positionComparison;
 
-      return a.requestedAt.compareTo(b.requestedAt);
+      final aReferenceTime = a.processedAt ?? a.requestedAt;
+      final bReferenceTime = b.processedAt ?? b.requestedAt;
+      return aReferenceTime.compareTo(bReferenceTime);
     });
 
     return entries;
@@ -199,6 +237,55 @@ class LaunchQueueRepository {
       'path': storagePath,
       'publicUrl': publicUrl,
     };
+  }
+
+  Future<Map<String, List<LaunchQueuePhoto>>> _fetchQueuePhotos(
+    List<LaunchQueueEntry> entries,
+  ) async {
+    final entryIds = entries
+        .map((entry) => entry.id)
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (entryIds.isEmpty) return {};
+
+    try {
+      final response = await _client
+          .from('boat_launch_queue_photos')
+          .select()
+          .inFilter('queue_entry_id', entryIds)
+          .order('created_at', ascending: true);
+
+      return _groupPhotosByEntry(response);
+    } catch (_) {
+      try {
+        final response = await _client
+            .from('boat_launch_queue_photos')
+            .select()
+            .inFilter('queue_entry_id', entryIds);
+        return _groupPhotosByEntry(response);
+      } catch (_) {
+        return {};
+      }
+    }
+  }
+
+  Map<String, List<LaunchQueuePhoto>> _groupPhotosByEntry(dynamic response) {
+    final data = (response as List).cast<Map<String, dynamic>>();
+    final photosByEntry = <String, List<LaunchQueuePhoto>>{};
+
+    for (final item in data) {
+      final photo = LaunchQueuePhoto.fromMap(item);
+      if (photo.queueEntryId.isEmpty) continue;
+      photosByEntry.putIfAbsent(photo.queueEntryId, () => []).add(photo);
+    }
+
+    return photosByEntry.map(
+      (key, value) => MapEntry(
+        key,
+        List<LaunchQueuePhoto>.unmodifiable(value),
+      ),
+    );
   }
 
   String _resolveExtension(XFile file) {

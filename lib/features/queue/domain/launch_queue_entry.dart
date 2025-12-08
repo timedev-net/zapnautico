@@ -1,3 +1,5 @@
+import 'launch_queue_photo.dart';
+
 class LaunchQueueEntry {
   LaunchQueueEntry({
     required this.id,
@@ -9,6 +11,7 @@ class LaunchQueueEntry {
     required this.requestedByEmail,
     required this.status,
     required this.requestedAt,
+    this.processedAt,
     required this.queuePosition,
     this.boatName,
     this.genericBoatName,
@@ -17,7 +20,8 @@ class LaunchQueueEntry {
     this.boatPhotoUrl,
     required this.isOwnBoat,
     required this.isMarinaUser,
-  });
+    List<LaunchQueuePhoto> queuePhotos = const [],
+  }) : queuePhotos = List.unmodifiable(queuePhotos);
 
   final String id;
   final String boatId;
@@ -30,18 +34,32 @@ class LaunchQueueEntry {
   final String? requestedByEmail;
   final String status;
   final DateTime requestedAt;
+  final DateTime? processedAt;
   final int queuePosition;
   final String? visibleBoatName;
   final String? visibleOwnerName;
   final String? boatPhotoUrl;
   final bool isOwnBoat;
   final bool isMarinaUser;
+  final List<LaunchQueuePhoto> queuePhotos;
 
   bool get isGenericEntry => boatId.isEmpty;
 
   bool get hasBoatPhoto => boatPhotoUrl != null && boatPhotoUrl!.isNotEmpty;
 
+  bool get hasQueuePhotos =>
+      queuePhotos.any((photo) => photo.hasUrl);
+
   bool get hasMarina => marinaId.isNotEmpty;
+
+  LaunchQueuePhoto? get primaryQueuePhoto {
+    for (final photo in queuePhotos) {
+      if (photo.hasUrl) return photo;
+    }
+    return queuePhotos.isNotEmpty ? queuePhotos.first : null;
+  }
+
+  String? get queuePrimaryPhotoUrl => primaryQueuePhoto?.publicUrl;
 
   String get displayMarinaName =>
       hasMarina && marinaName.isNotEmpty ? marinaName : 'Sem marina associada';
@@ -85,6 +103,7 @@ class LaunchQueueEntry {
       requestedByEmail: data['requested_by_email'] as String?,
       status: data['status'] as String? ?? 'pending',
       requestedAt: requestedAt,
+      processedAt: _parseNullableDateTime(data['processed_at']),
       queuePosition: queuePosition,
       boatName: data['boat_name'] as String?,
       genericBoatName: data['generic_boat_name'] as String?,
@@ -93,6 +112,31 @@ class LaunchQueueEntry {
       boatPhotoUrl: data['boat_photo_url'] as String?,
       isOwnBoat: _parseBool(data['is_own_boat']),
       isMarinaUser: _parseBool(data['is_marina_user']),
+      queuePhotos: const [],
+    );
+  }
+
+  LaunchQueueEntry withQueuePhotos(List<LaunchQueuePhoto> photos) {
+    return LaunchQueueEntry(
+      id: id,
+      boatId: boatId,
+      marinaId: marinaId,
+      marinaName: marinaName,
+      requestedBy: requestedBy,
+      requestedByName: requestedByName,
+      requestedByEmail: requestedByEmail,
+      status: status,
+      requestedAt: requestedAt,
+      processedAt: processedAt,
+      queuePosition: queuePosition,
+      boatName: boatName,
+      genericBoatName: genericBoatName,
+      visibleBoatName: visibleBoatName,
+      visibleOwnerName: visibleOwnerName,
+      boatPhotoUrl: boatPhotoUrl,
+      isOwnBoat: isOwnBoat,
+      isMarinaUser: isMarinaUser,
+      queuePhotos: photos,
     );
   }
 
@@ -107,6 +151,14 @@ class LaunchQueueEntry {
       return DateTime.fromMillisecondsSinceEpoch(value);
     }
     return DateTime.now();
+  }
+
+  static DateTime? _parseNullableDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    return null;
   }
 
   static bool _parseBool(dynamic value) {

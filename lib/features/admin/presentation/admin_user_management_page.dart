@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
 import '../../user_profiles/data/user_profile_repository.dart';
+import '../../user_profiles/domain/marina_roles.dart';
 import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 
@@ -57,7 +58,8 @@ class _UserCard extends ConsumerWidget {
         final marinas = await ref.read(marinasProvider.future);
         String? initialMarinaId;
         for (final profile in item.profiles) {
-          if (profile.profileSlug == 'marina' && profile.marinaId != null) {
+          if (isMarinaRoleSlug(profile.profileSlug) &&
+              profile.marinaId != null) {
             initialMarinaId = profile.marinaId;
             break;
           }
@@ -152,7 +154,7 @@ class _UserCard extends ConsumerWidget {
                   for (final profile in item.profiles)
                     Chip(
                       label: Text(
-                        profile.profileSlug == 'marina' &&
+                        isMarinaRoleSlug(profile.profileSlug) &&
                                 profile.marinaName != null &&
                                 profile.marinaName!.isNotEmpty
                             ? '${profile.profileName} - ${profile.marinaName}'
@@ -211,7 +213,7 @@ Future<void> _showEditProfilesSheet({
                 const SizedBox(height: 16),
                 ...availableProfiles.map((profile) {
                   final isSelected = selected.contains(profile.slug);
-                  final isMarinaProfile = profile.slug == 'marina';
+                  final isMarinaProfile = marinaRoleSlugs.contains(profile.slug);
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -305,7 +307,9 @@ Future<void> _showEditProfilesSheet({
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () async {
-                      if (selected.contains('marina')) {
+                      final requiresMarinaSelection =
+                          selected.any(marinaRoleSlugs.contains);
+                      if (requiresMarinaSelection) {
                         if (marinas.isEmpty) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -333,7 +337,7 @@ Future<void> _showEditProfilesSheet({
                           final payload = <String, dynamic>{
                             'slug': profile.slug,
                           };
-                          if (profile.slug == 'marina') {
+                          if (marinaRoleSlugs.contains(profile.slug)) {
                             payload['marina_id'] = selectedMarinaId;
                           }
                           payloads.add(payload);
