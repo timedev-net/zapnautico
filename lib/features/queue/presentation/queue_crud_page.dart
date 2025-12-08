@@ -8,6 +8,9 @@ import 'package:intl/intl.dart';
 
 import '../../../core/supabase_providers.dart';
 import '../../boats/domain/boat.dart';
+import '../../boats/presentation/boat_detail_page.dart';
+import '../../boats/presentation/boat_gallery_page.dart';
+import '../../boats/providers.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
 import '../../user_profiles/providers.dart';
@@ -23,6 +26,8 @@ enum _QueueStatusTab { pending, inWater, completed, cancelled }
 final _queueStatusTabProvider = StateProvider.autoDispose<_QueueStatusTab>(
   (ref) => _QueueStatusTab.pending,
 );
+
+enum _MarinaEntryMenuAction { viewDetails, cancel }
 
 class QueueCrudPage extends ConsumerWidget {
   const QueueCrudPage({super.key, this.showAppBar = true});
@@ -166,6 +171,12 @@ class QueueCrudPage extends ConsumerWidget {
                   onDelete: (entry) => _deleteEntry(context, ref, entry),
                   onRaise: hasOwnerProfile
                       ? (entry) => _raiseBoat(context, ref, entry)
+                      : null,
+                  onOpenBoatGallery: hasMarinaProfile
+                      ? (entry) => _openBoatGallery(context, ref, entry)
+                      : null,
+                  onOpenEntryMenu: hasMarinaProfile
+                      ? (entry) => _openMarinaEntryMenu(context, ref, entry)
                       : null,
                 ),
               ),
@@ -321,6 +332,184 @@ class QueueCrudPage extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Não foi possível salvar a entrada: $error')),
+        );
+      }
+    } finally {
+      notifier.state = false;
+    }
+  }
+
+  Future<Boat?> _loadBoatForEntry(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (entry.boatId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registro sem embarcação vinculada.'),
+          ),
+        );
+      }
+      return null;
+    }
+
+    try {
+      final boat = await ref.read(boatFutureProvider(entry.boatId).future);
+      if (boat == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Embarcação não encontrada.'),
+            ),
+          );
+        }
+        return null;
+      }
+      return boat;
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível carregar a embarcação: $error'),
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
+  Future<void> _openBoatGallery(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    final boat = await _loadBoatForEntry(context, ref, entry);
+    if (boat == null) return;
+
+    if (boat.photos.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Embarcação sem fotos cadastradas.')),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BoatGalleryPage(photos: boat.photos),
+      ),
+    );
+  }
+
+  Future<void> _openMarinaEntryMenu(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (entry.boatId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registro sem embarcação vinculada.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final action = await showModalBottomSheet<_MarinaEntryMenuAction>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.directions_boat_filled),
+                title: const Text('Ver detalhes da embarcação'),
+                onTap: () => Navigator.of(sheetContext).pop(
+                  _MarinaEntryMenuAction.viewDetails,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cancel_outlined),
+                title: const Text('Cancelar'),
+                onTap: () => Navigator.of(sheetContext).pop(
+                  _MarinaEntryMenuAction.cancel,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (action == _MarinaEntryMenuAction.viewDetails) {
+      if (!context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BoatDetailPage(boatId: entry.boatId),
+        ),
+      );
+    } else if (action == _MarinaEntryMenuAction.cancel) {
+      if (!context.mounted) return;
+      await _cancelQueueEntry(context, ref, entry);
+    }
+  }
+
+  Future<void> _cancelQueueEntry(
+    BuildContext context,
+    WidgetRef ref,
+    LaunchQueueEntry entry,
+  ) async {
+    if (entry.status == 'cancelled') {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Registro já está cancelado.')),
+        );
+      }
+      return;
+    }
+
+    if (ref.read(queueOperationInProgressProvider)) {
+      return;
+    }
+
+    final notifier = ref.read(queueOperationInProgressProvider.notifier);
+    notifier.state = true;
+    _cancelScheduledTransition(entry.id);
+
+    final repository = ref.read(launchQueueRepositoryProvider);
+
+    try {
+      await repository.updateEntry(
+        entryId: entry.id,
+        status: 'cancelled',
+        processedAt: DateTime.now(),
+      );
+
+      ref.invalidate(queueEntriesProvider);
+      await ref.read(queueEntriesProvider.future);
+
+      _inProgressPreviousStatuses.remove(entry.id);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Entrada marcada como cancelada.')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível cancelar a entrada: $error'),
+          ),
         );
       }
     } finally {
@@ -814,8 +1003,9 @@ class _StatusCountChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background =
-        selected ? colorScheme.primaryContainer : colorScheme.surfaceVariant;
+    final background = selected
+        ? colorScheme.primaryContainer
+        : colorScheme.surfaceContainerHighest;
     final foreground = selected
         ? colorScheme.onPrimaryContainer
         : colorScheme.onSurfaceVariant;
@@ -891,6 +1081,8 @@ class _QueueEntriesList extends StatelessWidget {
     this.onRaise,
     this.onLift,
     this.onCancel,
+    this.onOpenBoatGallery,
+    this.onOpenEntryMenu,
   });
 
   final List<LaunchQueueEntry> entries;
@@ -908,6 +1100,8 @@ class _QueueEntriesList extends StatelessWidget {
   final void Function(LaunchQueueEntry entry)? onRaise;
   final void Function(LaunchQueueEntry entry)? onLift;
   final void Function(LaunchQueueEntry entry)? onCancel;
+  final void Function(LaunchQueueEntry entry)? onOpenBoatGallery;
+  final void Function(LaunchQueueEntry entry)? onOpenEntryMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -949,6 +1143,14 @@ class _QueueEntriesList extends StatelessWidget {
               currentUserId!.isEmpty ||
               entry.requestedBy != currentUserId;
           final isMasked = maskOtherOwnerBoats && isDifferentUserRequest;
+          final canOpenGallery = onOpenBoatGallery != null &&
+              entry.boatId.isNotEmpty &&
+              !isMasked &&
+              entry.userCanSeeDetails;
+          final canOpenMenu = onOpenEntryMenu != null &&
+              entry.boatId.isNotEmpty &&
+              !isMasked &&
+              entry.userCanSeeDetails;
           final subtitleLines = _buildSubtitleLines(entry, masked: isMasked);
           final cardColor = _cardColor(entry.status, theme);
           final trailingChildren = <Widget>[];
@@ -1028,7 +1230,12 @@ class _QueueEntriesList extends StatelessWidget {
           return Card(
             color: cardColor,
             child: ListTile(
-              leading: _QueueEntryAvatar(entry: entry, forceBoatIcon: isMasked),
+              leading: _QueueEntryAvatar(
+                entry: entry,
+                forceBoatIcon: isMasked,
+                onTap:
+                    canOpenGallery ? () => onOpenBoatGallery!(entry) : null,
+              ),
               title: Text(
                 isMasked ? 'Embarcação' : entry.displayBoatName,
                 style: Theme.of(context).textTheme.titleMedium,
@@ -1037,6 +1244,7 @@ class _QueueEntriesList extends StatelessWidget {
                 subtitleLines.join('\n'),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              onTap: canOpenMenu ? () => onOpenEntryMenu!(entry) : null,
               trailing: trailingChildren.isEmpty
                   ? null
                   : Wrap(spacing: 8, children: trailingChildren),
@@ -1105,10 +1313,15 @@ class _QueueEntriesList extends StatelessWidget {
 }
 
 class _QueueEntryAvatar extends StatelessWidget {
-  const _QueueEntryAvatar({required this.entry, this.forceBoatIcon = false});
+  const _QueueEntryAvatar({
+    required this.entry,
+    this.forceBoatIcon = false,
+    this.onTap,
+  });
 
   final LaunchQueueEntry entry;
   final bool forceBoatIcon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1151,47 +1364,53 @@ class _QueueEntryAvatar extends StatelessWidget {
       );
     }
 
+    final avatar = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(child: avatarContent),
+        if (entry.status == 'in_progress')
+          Positioned(
+            top: -2,
+            right: -2,
+            child: CircleAvatar(
+              radius: 13,
+              backgroundColor: theme.colorScheme.secondaryContainer,
+              foregroundColor: theme.colorScheme.onSecondaryContainer,
+              child: Icon(
+                _inProgressPreviousStatuses[entry.id] == 'in_water'
+                    ? Icons.arrow_upward
+                    : Icons.arrow_downward,
+                size: 16,
+              ),
+            ),
+          ),
+        if (entry.status != 'in_water')
+          Positioned(
+            bottom: -2,
+            right: -2,
+            child: CircleAvatar(
+              radius: 14,
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              child: Text(
+                entry.queuePosition.toString(),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+
     return SizedBox(
       width: radius * 2.4,
       height: radius * 2.4,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(child: avatarContent),
-          if (entry.status == 'in_progress')
-            Positioned(
-              top: -2,
-              right: -2,
-              child: CircleAvatar(
-                radius: 13,
-                backgroundColor: theme.colorScheme.secondaryContainer,
-                foregroundColor: theme.colorScheme.onSecondaryContainer,
-                child: Icon(
-                  _inProgressPreviousStatuses[entry.id] == 'in_water'
-                      ? Icons.arrow_upward
-                      : Icons.arrow_downward,
-                  size: 16,
-                ),
-              ),
-            ),
-          if (entry.status != 'in_water')
-            Positioned(
-              bottom: -2,
-              right: -2,
-              child: CircleAvatar(
-                radius: 14,
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-                child: Text(
-                  entry.queuePosition.toString(),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-        ],
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: avatar,
       ),
     );
   }
@@ -1666,7 +1885,7 @@ class _QueueEntryPhotosField extends StatelessWidget {
                           return Container(
                             width: 88,
                             height: 88,
-                            color: theme.colorScheme.surfaceVariant,
+                            color: theme.colorScheme.surfaceContainerHighest,
                             alignment: Alignment.center,
                             child: const SizedBox(
                               width: 18,
