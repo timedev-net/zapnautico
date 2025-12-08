@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/supabase_providers.dart';
@@ -72,38 +74,13 @@ class QueueCrudPage extends ConsumerWidget {
             : const Icon(Icons.add),
         label: const Text('Nova entrada'),
       ),
-      bottomNavigationBar: hasMarinaProfile
-          ? NavigationBar(
-              selectedIndex: selectedStatusTab.index,
-              onDestinationSelected: (value) {
-                ref.read(_queueStatusTabProvider.notifier).state =
-                    _QueueStatusTab.values[value];
-              },
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.pending_actions_outlined),
-                  label: 'Pendentes',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.water_drop_outlined),
-                  label: 'Na água',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.check_circle_outline),
-                  label: 'Concluídos',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.cancel_outlined),
-                  label: 'Cancelados',
-                ),
-              ],
-            )
-          : null,
       body: entriesAsync.when(
         data: (state) {
           final entries = hasMarinaProfile
               ? _filterEntriesForSelectedTab(state.entries, selectedStatusTab)
               : state.entries;
+          final Map<_QueueStatusTab, int> statusCounts =
+              _countEntriesByTab(state.entries);
           String? selectedMarinaName;
           if (selectedMarinaId != null &&
               selectedMarinaId.isNotEmpty &&
@@ -120,13 +97,26 @@ class QueueCrudPage extends ConsumerWidget {
               selectedMarinaId != null &&
               selectedMarinaId.isNotEmpty &&
               selectedMarinaId != queueNoMarinaFilterValue;
+          final filterTopPadding = hasMarinaProfile ? 8.0 : 16.0;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (hasMarinaProfile)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: _QueueStatusSummary(
+                    counts: statusCounts,
+                    selectedTab: selectedStatusTab,
+                    onTabSelected: (tab) => ref
+                        .read(_queueStatusTabProvider.notifier)
+                        .state = tab,
+                  ),
+                ),
               if (!hasLockedMarinaFilter)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  padding:
+                      EdgeInsets.fromLTRB(16, filterTopPadding, 16, 0),
                   child: _QueueMarinaFilter(
                     marinas: marinas,
                     selectedMarinaId: selectedMarinaId,
@@ -200,6 +190,17 @@ class QueueCrudPage extends ConsumerWidget {
       return;
     }
 
+    final profiles = ref.read(currentUserProfilesProvider);
+    final hasMarinaProfile = profiles.maybeWhen(
+      data: (profiles) =>
+          profiles.any((profile) => profile.profileSlug == 'marina'),
+      orElse: () => false,
+    );
+    final forcedMarinaId = ref.read(queueForcedMarinaIdProvider);
+    final lockMarinaSelection = hasMarinaProfile &&
+        forcedMarinaId != null &&
+        forcedMarinaId.isNotEmpty;
+
     List<Marina> marinas;
     try {
       marinas = await ref.read(marinasProvider.future);
@@ -245,6 +246,11 @@ class QueueCrudPage extends ConsumerWidget {
     final selectedFilterMarina = currentFilter == queueNoMarinaFilterValue
         ? null
         : currentFilter;
+    final initialMarinaId = entry != null && entry.marinaId.isNotEmpty
+        ? entry.marinaId
+        : (forcedMarinaId?.isNotEmpty == true
+            ? forcedMarinaId
+            : selectedFilterMarina);
 
     final result = await showDialog<_QueueEntryFormResult>(
       context: context,
@@ -253,9 +259,9 @@ class QueueCrudPage extends ConsumerWidget {
           marinas: marinas,
           boats: boats,
           entry: entry,
-          initialMarinaId: entry != null && entry.marinaId.isNotEmpty
-              ? entry.marinaId
-              : selectedFilterMarina,
+          initialMarinaId: initialMarinaId,
+          showMarinaSelector: !lockMarinaSelection,
+          fixedMarinaId: forcedMarinaId,
         );
       },
     );
@@ -276,6 +282,7 @@ class QueueCrudPage extends ConsumerWidget {
           boatId: result.boatId,
           genericBoatName: result.genericBoatName,
           status: result.status,
+          photos: result.photos,
         );
       } else {
         await repository.updateEntry(
@@ -286,6 +293,7 @@ class QueueCrudPage extends ConsumerWidget {
           processedAt: result.status == 'pending' ? null : DateTime.now(),
           clearProcessedAt: result.status == 'pending',
           genericBoatName: result.genericBoatName ?? '',
+          newPhotos: result.photos,
         );
       }
 
@@ -713,6 +721,159 @@ List<LaunchQueueEntry> _filterEntriesForSelectedTab(
   }
 }
 
+Map<_QueueStatusTab, int> _countEntriesByTab(
+  List<LaunchQueueEntry> entries,
+) {
+  final counts = <_QueueStatusTab, int>{
+    _QueueStatusTab.pending: 0,
+    _QueueStatusTab.inWater: 0,
+    _QueueStatusTab.completed: 0,
+    _QueueStatusTab.cancelled: 0,
+  };
+
+  for (final entry in entries) {
+    switch (entry.status) {
+      case 'pending':
+      case 'in_progress':
+        counts[_QueueStatusTab.pending] =
+            counts[_QueueStatusTab.pending]! + 1;
+        break;
+      case 'in_water':
+        counts[_QueueStatusTab.inWater] =
+            counts[_QueueStatusTab.inWater]! + 1;
+        break;
+      case 'completed':
+        counts[_QueueStatusTab.completed] =
+            counts[_QueueStatusTab.completed]! + 1;
+        break;
+      case 'cancelled':
+        counts[_QueueStatusTab.cancelled] =
+            counts[_QueueStatusTab.cancelled]! + 1;
+        break;
+    }
+  }
+
+  return counts;
+}
+
+class _QueueStatusSummary extends StatelessWidget {
+  const _QueueStatusSummary({
+    required this.counts,
+    required this.selectedTab,
+    required this.onTabSelected,
+  });
+
+  final Map<_QueueStatusTab, int> counts;
+  final _QueueStatusTab selectedTab;
+  final ValueChanged<_QueueStatusTab> onTabSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: _statusSummaryItems
+              .map(
+                (item) => _StatusCountChip(
+                  icon: item.icon,
+                  label: item.label,
+                  count: counts[item.tab] ?? 0,
+                  selected: selectedTab == item.tab,
+                  onPressed: () => onTabSelected(item.tab),
+                  colorScheme: colorScheme,
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusCountChip extends StatelessWidget {
+  const _StatusCountChip({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onPressed,
+    required this.colorScheme,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onPressed;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final background =
+        selected ? colorScheme.primaryContainer : colorScheme.surfaceVariant;
+    final foreground = selected
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurfaceVariant;
+
+    return FilterChip(
+      selected: selected,
+      showCheckmark: false,
+      avatar: Icon(icon, size: 18, color: foreground),
+      label: Text('$label: $count'),
+      onSelected: (_) => onPressed(),
+      backgroundColor: background,
+      selectedColor: background,
+      side: BorderSide(
+        color: selected ? colorScheme.primary : colorScheme.outlineVariant,
+      ),
+      labelStyle: Theme.of(context)
+          .textTheme
+          .bodyMedium
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w600),
+    );
+  }
+}
+
+class _StatusSummaryItem {
+  const _StatusSummaryItem({
+    required this.tab,
+    required this.label,
+    required this.icon,
+  });
+
+  final _QueueStatusTab tab;
+  final String label;
+  final IconData icon;
+}
+
+const _statusSummaryItems = <_StatusSummaryItem>[
+  _StatusSummaryItem(
+    tab: _QueueStatusTab.pending,
+    label: 'Pendentes',
+    icon: Icons.pending_actions_outlined,
+  ),
+  _StatusSummaryItem(
+    tab: _QueueStatusTab.inWater,
+    label: 'Na água',
+    icon: Icons.water_drop_outlined,
+  ),
+  _StatusSummaryItem(
+    tab: _QueueStatusTab.completed,
+    label: 'Concluídos',
+    icon: Icons.check_circle_outline,
+  ),
+  _StatusSummaryItem(
+    tab: _QueueStatusTab.cancelled,
+    label: 'Cancelados',
+    icon: Icons.cancel_outlined,
+  ),
+];
+
 class _QueueEntriesList extends StatelessWidget {
   const _QueueEntriesList({
     required this.entries,
@@ -1119,12 +1280,16 @@ class _QueueEntryFormDialog extends StatefulWidget {
     required this.boats,
     this.entry,
     this.initialMarinaId,
+    required this.showMarinaSelector,
+    this.fixedMarinaId,
   });
 
   final List<Marina> marinas;
   final List<Boat> boats;
   final LaunchQueueEntry? entry;
   final String? initialMarinaId;
+  final bool showMarinaSelector;
+  final String? fixedMarinaId;
 
   @override
   State<_QueueEntryFormDialog> createState() => _QueueEntryFormDialogState();
@@ -1138,6 +1303,7 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
   late String? _selectedBoatId;
   late String _selectedStatus;
   late TextEditingController _descriptionController;
+  final List<XFile> _selectedPhotos = [];
 
   @override
   void initState() {
@@ -1146,6 +1312,10 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
     final entryMarinaId = widget.entry?.marinaId ?? '';
     if (entryMarinaId.isNotEmpty) {
       _selectedMarinaId = entryMarinaId;
+    } else if (!widget.showMarinaSelector &&
+        widget.fixedMarinaId != null &&
+        widget.fixedMarinaId!.isNotEmpty) {
+      _selectedMarinaId = widget.fixedMarinaId;
     } else {
       final initial = widget.initialMarinaId ?? '';
       _selectedMarinaId = initial.isNotEmpty ? initial : null;
@@ -1182,38 +1352,40 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String?>(
-                initialValue: _selectedMarinaId,
-                decoration: const InputDecoration(
-                  labelText: 'Marina',
-                  border: OutlineInputBorder(),
-                ),
-                hint: const Text('Selecione uma marina'),
-                isExpanded: true,
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Sem marina vinculada'),
+              if (widget.showMarinaSelector) ...[
+                DropdownButtonFormField<String?>(
+                  initialValue: _selectedMarinaId,
+                  decoration: const InputDecoration(
+                    labelText: 'Marina',
+                    border: OutlineInputBorder(),
                   ),
-                  ...widget.marinas.map(
-                    (marina) => DropdownMenuItem<String?>(
-                      value: marina.id,
-                      child: Text(marina.name),
+                  hint: const Text('Selecione uma marina'),
+                  isExpanded: true,
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Sem marina vinculada'),
                     ),
-                  ),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedMarinaId = value;
-                    if (!_boatBelongsToSelectedMarina(_selectedBoatId)) {
-                      _selectedBoatId = null;
-                      _boatFieldKey.currentState?.didChange(null);
-                    }
-                  });
-                  _formKey.currentState?.validate();
-                },
-              ),
-              const SizedBox(height: 12),
+                    ...widget.marinas.map(
+                      (marina) => DropdownMenuItem<String?>(
+                        value: marina.id,
+                        child: Text(marina.name),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedMarinaId = value;
+                      if (!_boatBelongsToSelectedMarina(_selectedBoatId)) {
+                        _selectedBoatId = null;
+                        _boatFieldKey.currentState?.didChange(null);
+                      }
+                    });
+                    _formKey.currentState?.validate();
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
               DropdownButtonFormField<String?>(
                 key: _boatFieldKey,
                 initialValue: _selectedBoatId,
@@ -1284,6 +1456,13 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
                   return null;
                 },
               ),
+              const SizedBox(height: 12),
+              _QueueEntryPhotosField(
+                photos: _selectedPhotos,
+                onAddFromGallery: _pickImagesFromGallery,
+                onAddFromCamera: _pickImageFromCamera,
+                onRemove: _removePhotoAt,
+              ),
             ],
           ),
         ),
@@ -1327,6 +1506,69 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
     );
   }
 
+  Future<void> _pickImagesFromGallery() async {
+    final remainingSlots = 5 - _selectedPhotos.length;
+    if (remainingSlots <= 0) {
+      _showMessage('É possível anexar no máximo 5 fotos.');
+      return;
+    }
+
+    try {
+      final picker = ImagePicker();
+      final files = await picker.pickMultiImage(
+        maxWidth: 1600,
+        imageQuality: 85,
+      );
+      if (files.isEmpty) return;
+      if (!mounted) return;
+
+      final toAdd = files.take(remainingSlots).toList();
+      setState(() => _selectedPhotos.addAll(toAdd));
+
+      if (files.length > remainingSlots) {
+        _showMessage('Limite de 5 fotos atingido. Apenas as primeiras foram adicionadas.');
+      }
+    } catch (error) {
+      _showMessage('Erro ao selecionar fotos: $error');
+    }
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    if (_selectedPhotos.length >= 5) {
+      _showMessage('É possível anexar no máximo 5 fotos.');
+      return;
+    }
+
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1600,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+      if (!mounted) return;
+
+      setState(() => _selectedPhotos.add(file));
+    } catch (error) {
+      _showMessage('Erro ao tirar foto: $error');
+    }
+  }
+
+  void _removePhotoAt(int index) {
+    if (index < 0 || index >= _selectedPhotos.length) return;
+    setState(() {
+      _selectedPhotos.removeAt(index);
+    });
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   void _submit() {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -1348,9 +1590,113 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
       genericBoatName: description.isNotEmpty ? description : null,
       clearMarina: !hasMarina,
       clearBoat: !hasBoat,
+      photos: List<XFile>.unmodifiable(_selectedPhotos),
     );
 
     Navigator.of(context).pop(result);
+  }
+}
+
+class _QueueEntryPhotosField extends StatelessWidget {
+  const _QueueEntryPhotosField({
+    required this.photos,
+    required this.onAddFromGallery,
+    required this.onAddFromCamera,
+    required this.onRemove,
+  });
+
+  final List<XFile> photos;
+  final VoidCallback onAddFromGallery;
+  final VoidCallback onAddFromCamera;
+  final void Function(int index) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Selecionar fotos'),
+                onPressed: onAddFromGallery,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              onPressed: onAddFromCamera,
+              icon: const Icon(Icons.photo_camera_outlined),
+              tooltip: 'Tirar foto',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (photos.isEmpty)
+          Text(
+            'Anexe até 5 fotos (opcional).',
+            style: theme.textTheme.bodySmall,
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: List.generate(
+              photos.length,
+              (index) {
+                final file = photos[index];
+                return Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: FutureBuilder<Uint8List>(
+                        future: file.readAsBytes(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasData) {
+                            return Image.memory(
+                              snapshot.data!,
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.cover,
+                            );
+                          }
+                          return Container(
+                            width: 88,
+                            height: 88,
+                            color: theme.colorScheme.surfaceVariant,
+                            alignment: Alignment.center,
+                            child: const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: IconButton(
+                        iconSize: 20,
+                        visualDensity: VisualDensity.compact,
+                        style: IconButton.styleFrom(
+                          backgroundColor: theme.colorScheme.surface,
+                        ),
+                        icon: const Icon(Icons.close),
+                        onPressed: () => onRemove(index),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -1362,6 +1708,7 @@ class _QueueEntryFormResult {
     this.genericBoatName,
     required this.clearMarina,
     required this.clearBoat,
+    required this.photos,
   });
 
   final String? marinaId;
@@ -1370,6 +1717,7 @@ class _QueueEntryFormResult {
   final String? genericBoatName;
   final bool clearMarina;
   final bool clearBoat;
+  final List<XFile> photos;
 }
 
 class _QueueStatusOption {

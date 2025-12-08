@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/supabase_providers.dart';
 import '../domain/launch_queue_entry.dart';
@@ -8,6 +11,8 @@ class LaunchQueueRepository {
   LaunchQueueRepository(this._client);
 
   final SupabaseClient _client;
+  static const _bucket = 'boat_launch_queue_photos';
+  static const _uuid = Uuid();
 
   Future<List<LaunchQueueEntry>> fetchEntries() async {
     final response = await _client
@@ -32,11 +37,12 @@ class LaunchQueueRepository {
     return entries;
   }
 
-  Future<void> createEntry({
+  Future<String> createEntry({
     String? marinaId,
     String? boatId,
     String? genericBoatName,
     String status = 'pending',
+    List<XFile> photos = const [],
   }) async {
     final normalizedGenericName = genericBoatName?.trim();
 
@@ -69,7 +75,22 @@ class LaunchQueueRepository {
       payload['generic_boat_name'] = normalizedGenericName;
     }
 
-    await _client.from('boat_launch_queue').insert(payload);
+    final response = await _client
+        .from('boat_launch_queue')
+        .insert(payload)
+        .select('id')
+        .single();
+
+    final entryId = response['id']?.toString();
+    if (entryId == null || entryId.isEmpty) {
+      throw StateError('NÇœo foi possÇðvel criar a entrada na fila.');
+    }
+
+    if (photos.isNotEmpty) {
+      await _syncPhotos(entryId: entryId, newPhotos: photos);
+    }
+
+    return entryId;
   }
 
   Future<void> cancelRequest(String entryId) async {
@@ -84,6 +105,7 @@ class LaunchQueueRepository {
     DateTime? processedAt,
     bool clearProcessedAt = false,
     String? genericBoatName,
+    List<XFile> newPhotos = const [],
   }) async {
     final updatePayload = <String, dynamic>{};
 
@@ -121,6 +143,79 @@ class LaunchQueueRepository {
         .from('boat_launch_queue')
         .update(updatePayload)
         .eq('id', entryId);
+
+    if (newPhotos.isNotEmpty) {
+      await _syncPhotos(entryId: entryId, newPhotos: newPhotos);
+    }
+  }
+
+  Future<void> _syncPhotos({
+    required String entryId,
+    required List<XFile> newPhotos,
+  }) async {
+    if (newPhotos.isEmpty) return;
+
+    final uploads = <Map<String, String>>[];
+    for (final photo in newPhotos.take(5)) {
+      final uploaded = await _uploadPhoto(entryId: entryId, file: photo);
+      uploads.add(uploaded);
+    }
+
+    if (uploads.isEmpty) return;
+
+    await _client.from('boat_launch_queue_photos').insert(
+          uploads
+              .map(
+                (photo) => {
+                  'queue_entry_id': entryId,
+                  'storage_path': photo['path'],
+                  'public_url': photo['publicUrl'],
+                },
+              )
+              .toList(),
+        );
+  }
+
+  Future<Map<String, String>> _uploadPhoto({
+    required String entryId,
+    required XFile file,
+  }) async {
+    final bytes = await file.readAsBytes();
+    final extension = _resolveExtension(file);
+    final storagePath =
+        'queue_entries/$entryId/${_uuid.v4()}$extension';
+
+    await _client.storage.from(_bucket).uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: _resolveContentType(extension),
+          ),
+        );
+
+    final publicUrl = _client.storage.from(_bucket).getPublicUrl(storagePath);
+    return {
+      'path': storagePath,
+      'publicUrl': publicUrl,
+    };
+  }
+
+  String _resolveExtension(XFile file) {
+    final extension = p.extension(file.name);
+    if (extension.isEmpty) return '.jpg';
+    return extension;
+  }
+
+  String _resolveContentType(String extension) {
+    switch (extension.toLowerCase()) {
+      case '.png':
+        return 'image/png';
+      case '.webp':
+        return 'image/webp';
+      default:
+        return 'image/jpeg';
+    }
   }
 }
 
