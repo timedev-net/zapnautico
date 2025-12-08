@@ -67,7 +67,7 @@ class QueueCrudPage extends ConsumerWidget {
           final entries = state.entries;
           String? selectedMarinaName;
           if (selectedMarinaId != null &&
-              selectedMarinaId!.isNotEmpty &&
+              selectedMarinaId.isNotEmpty &&
               selectedMarinaId != queueNoMarinaFilterValue) {
             for (final marina in marinas) {
               if (marina.id == selectedMarinaId) {
@@ -79,7 +79,7 @@ class QueueCrudPage extends ConsumerWidget {
           final showInWaterCount =
               shouldRestrictOwnerView &&
               selectedMarinaId != null &&
-              selectedMarinaId!.isNotEmpty &&
+              selectedMarinaId.isNotEmpty &&
               selectedMarinaId != queueNoMarinaFilterValue;
 
           return Column(
@@ -299,10 +299,7 @@ class QueueCrudPage extends ConsumerWidget {
       return;
     }
 
-    final minutes = await _askDuration(
-      context,
-      title: 'Tempo para descer',
-    );
+    final minutes = await _askDuration(context, title: 'Tempo para descer');
     if (minutes == null) return;
 
     _registerPreviousStatus(entry);
@@ -352,10 +349,7 @@ class QueueCrudPage extends ConsumerWidget {
       return;
     }
 
-    final minutes = await _askDuration(
-      context,
-      title: 'Tempo para subir',
-    );
+    final minutes = await _askDuration(context, title: 'Tempo para subir');
     if (minutes == null) return;
 
     _registerPreviousStatus(entry);
@@ -405,8 +399,9 @@ class QueueCrudPage extends ConsumerWidget {
       return;
     }
 
-    final previousStatus =
-        _inProgressPreviousStatuses[entry.id] == 'in_water' ? 'in_water' : 'pending';
+    final previousStatus = _inProgressPreviousStatuses[entry.id] == 'in_water'
+        ? 'in_water'
+        : 'pending';
 
     final notifier = ref.read(queueOperationInProgressProvider.notifier);
     notifier.state = true;
@@ -438,9 +433,7 @@ class QueueCrudPage extends ConsumerWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível cancelar a ação: $error'),
-          ),
+          SnackBar(content: Text('Não foi possível cancelar a ação: $error')),
         );
       }
     } finally {

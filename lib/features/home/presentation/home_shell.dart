@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_controller.dart';
-import '../../chat/presentation/chat_page.dart';
-import '../../marketplace/presentation/marketplace_page.dart';
+import '../../mural/presentation/mural_page.dart';
 import '../../profile/presentation/profile_page.dart';
 import 'home_page.dart';
 
@@ -21,19 +20,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget build(BuildContext context) {
     final pages = [
       const _HomePageConfig(
-        title: 'Início',
+        title: 'Inicio',
         icon: Icons.home,
         body: HomePage(),
       ),
       const _HomePageConfig(
-        title: 'Marketplace',
-        icon: Icons.storefront,
-        body: MarketplacePage(),
-      ),
-      const _HomePageConfig(
-        title: 'Chat',
-        icon: Icons.chat_bubble,
-        body: ChatPage(),
+        title: 'Mural',
+        icon: Icons.dashboard_customize_outlined,
+        body: MuralPage(),
       ),
       const _HomePageConfig(
         title: 'Perfil',

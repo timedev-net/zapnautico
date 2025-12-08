@@ -8,7 +8,6 @@ import '../data/boat_repository.dart';
 import '../domain/boat.dart';
 import '../domain/boat_photo.dart';
 import '../providers.dart';
-import '../../marketplace/presentation/listing_form_page.dart';
 import 'boat_form_page.dart';
 import 'boat_gallery_page.dart';
 
@@ -67,28 +66,12 @@ class BoatDetailPage extends ConsumerWidget {
               ref.invalidate(boatFutureProvider(boatId));
               await ref.read(boatFutureProvider(boatId).future);
             },
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            _PhotoGallery(photos: boat.photos),
-            const SizedBox(height: 24),
-            if (canEdit)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: FilledButton.icon(
-                  onPressed: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ListingFormPage(boat: boat),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.storefront_outlined),
-                  label: const Text('Anunciar no marketplace'),
-                ),
-              ),
-            if (canEdit) const SizedBox(height: 8),
-            _SectionTitle('Informações gerais'),
+            child: ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                _PhotoGallery(photos: boat.photos),
+                const SizedBox(height: 24),
+                _SectionTitle('Informações gerais'),
                 const SizedBox(height: 12),
                 _InfoRow(
                   label: 'Tipo de embarcação',

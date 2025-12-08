@@ -330,10 +330,8 @@ class _ContactPreferencesSection extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: OutlinedButton.icon(
-                onPressed: () => _openWhatsappForm(
-                  context,
-                  defaultLabel: userDisplayName,
-                ),
+                onPressed: () =>
+                    _openWhatsappForm(context, defaultLabel: userDisplayName),
                 icon: const Icon(Icons.add),
                 label: const Text('Adicionar WhatsApp'),
               ),
@@ -353,10 +351,8 @@ class _ContactPreferencesSection extends ConsumerWidget {
                   tooltip: instagramContact == null
                       ? 'Cadastrar Instagram'
                       : 'Editar Instagram',
-                  onPressed: () => _openInstagramForm(
-                    context,
-                    existing: instagramContact,
-                  ),
+                  onPressed: () =>
+                      _openInstagramForm(context, existing: instagramContact),
                   icon: const Icon(Icons.edit),
                 ),
                 if (instagramContact != null)
@@ -404,10 +400,8 @@ Future<void> _openInstagramForm(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => _InstagramFormSheet(
-      existing: existing,
-      messenger: messenger,
-    ),
+    builder: (_) =>
+        _InstagramFormSheet(existing: existing, messenger: messenger),
   );
 }
 
@@ -471,7 +465,9 @@ class _WhatsappFormSheetState extends ConsumerState<_WhatsappFormSheet> {
     final ddd = _dddController.text;
     final number = _numberController.text;
     try {
-      await ref.read(userContactRepositoryProvider).upsertContact(
+      await ref
+          .read(userContactRepositoryProvider)
+          .upsertContact(
             id: widget.existing?.id,
             channel: 'whatsapp',
             label: _resolvedLabel,
@@ -528,7 +524,7 @@ class _WhatsappFormSheetState extends ConsumerState<_WhatsappFormSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Este contato será exibido como "${_resolvedLabel}".',
+              'Este contato sera exibido como "$_resolvedLabel".',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -588,8 +584,8 @@ class _WhatsappFormSheetState extends ConsumerState<_WhatsappFormSheet> {
               Text(
                 _errorText!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
             ],
             const SizedBox(height: 20),
@@ -611,10 +607,7 @@ class _WhatsappFormSheetState extends ConsumerState<_WhatsappFormSheet> {
 }
 
 class _InstagramFormSheet extends ConsumerStatefulWidget {
-  const _InstagramFormSheet({
-    required this.messenger,
-    this.existing,
-  });
+  const _InstagramFormSheet({required this.messenger, this.existing});
 
   final ScaffoldMessengerState messenger;
   final UserContactChannel? existing;
@@ -650,7 +643,9 @@ class _InstagramFormSheetState extends ConsumerState<_InstagramFormSheet> {
       return;
     }
     try {
-      await ref.read(userContactRepositoryProvider).upsertContact(
+      await ref
+          .read(userContactRepositoryProvider)
+          .upsertContact(
             id: widget.existing?.id,
             channel: 'instagram',
             label: 'Instagram',
@@ -707,8 +702,8 @@ class _InstagramFormSheetState extends ConsumerState<_InstagramFormSheet> {
             Text(
               _errorText!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                color: Theme.of(context).colorScheme.error,
+              ),
             ),
           ],
           const SizedBox(height: 20),
