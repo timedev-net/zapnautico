@@ -8,7 +8,6 @@ import '../../financial/presentation/financial_management_page.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
 import '../../queue/data/launch_queue_repository.dart';
-import '../../queue/presentation/queue_crud_page.dart';
 import '../../user_profiles/providers.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -75,15 +74,6 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
               const SizedBox(height: 12),
             ],
-            FilledButton.icon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const QueueCrudPage(),
-                ),
-              ),
-              icon: const Icon(Icons.directions_boat_filled),
-              label: const Text('Fila de embarcações'),
-            ),
             const SizedBox(height: 32),
             _OwnedBoatsSection(
               boatsAsync: boatsAsync,

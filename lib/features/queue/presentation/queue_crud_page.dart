@@ -16,8 +16,16 @@ import '../providers.dart';
 final _scheduledStatusTimers = <String, Timer>{};
 final _inProgressPreviousStatuses = <String, String>{};
 
+enum _QueueStatusTab { pending, inWater, completed, cancelled }
+
+final _queueStatusTabProvider = StateProvider.autoDispose<_QueueStatusTab>(
+  (ref) => _QueueStatusTab.pending,
+);
+
 class QueueCrudPage extends ConsumerWidget {
-  const QueueCrudPage({super.key});
+  const QueueCrudPage({super.key, this.showAppBar = true});
+
+  final bool showAppBar;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,6 +37,7 @@ class QueueCrudPage extends ConsumerWidget {
     final selectedMarinaId = ref.watch(queueAppliedFilterProvider);
     final forcedMarinaId = ref.watch(queueForcedMarinaIdProvider);
     final currentUserId = ref.watch(userProvider)?.id;
+    final selectedStatusTab = ref.watch(_queueStatusTabProvider);
     final hasLockedMarinaFilter = forcedMarinaId != null;
     ref.watch(queueRealtimeSyncProvider);
 
@@ -50,7 +59,8 @@ class QueueCrudPage extends ConsumerWidget {
         hasOwnerProfile && !isAdmin && !hasMarinaProfile;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Fila de embarcações')),
+      appBar:
+          showAppBar ? AppBar(title: const Text('Fila de embarcações')) : null,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: isProcessing ? null : () => _openForm(context, ref),
         icon: isProcessing
@@ -62,9 +72,38 @@ class QueueCrudPage extends ConsumerWidget {
             : const Icon(Icons.add),
         label: const Text('Nova entrada'),
       ),
+      bottomNavigationBar: hasMarinaProfile
+          ? NavigationBar(
+              selectedIndex: selectedStatusTab.index,
+              onDestinationSelected: (value) {
+                ref.read(_queueStatusTabProvider.notifier).state =
+                    _QueueStatusTab.values[value];
+              },
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.pending_actions_outlined),
+                  label: 'Pendentes',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.water_drop_outlined),
+                  label: 'Na água',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.check_circle_outline),
+                  label: 'Concluídos',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.cancel_outlined),
+                  label: 'Cancelados',
+                ),
+              ],
+            )
+          : null,
       body: entriesAsync.when(
         data: (state) {
-          final entries = state.entries;
+          final entries = hasMarinaProfile
+              ? _filterEntriesForSelectedTab(state.entries, selectedStatusTab)
+              : state.entries;
           String? selectedMarinaName;
           if (selectedMarinaId != null &&
               selectedMarinaId.isNotEmpty &&
@@ -650,6 +689,27 @@ class QueueCrudPage extends ConsumerWidget {
     } finally {
       notifier.state = false;
     }
+  }
+}
+
+List<LaunchQueueEntry> _filterEntriesForSelectedTab(
+  List<LaunchQueueEntry> entries,
+  _QueueStatusTab selectedTab,
+) {
+  switch (selectedTab) {
+    case _QueueStatusTab.pending:
+      return entries
+          .where(
+            (entry) =>
+                entry.status == 'pending' || entry.status == 'in_progress',
+          )
+          .toList();
+    case _QueueStatusTab.inWater:
+      return entries.where((entry) => entry.status == 'in_water').toList();
+    case _QueueStatusTab.completed:
+      return entries.where((entry) => entry.status == 'completed').toList();
+    case _QueueStatusTab.cancelled:
+      return entries.where((entry) => entry.status == 'cancelled').toList();
   }
 }
 

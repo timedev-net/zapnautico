@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../mural/presentation/mural_page.dart';
 import '../../profile/presentation/profile_page.dart';
+import '../../queue/presentation/queue_crud_page.dart';
 import 'home_page.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -23,6 +24,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         title: 'Inicio',
         icon: Icons.home,
         body: HomePage(),
+      ),
+      const _HomePageConfig(
+        title: 'Fila',
+        icon: Icons.directions_boat_filled,
+        body: QueueCrudPage(showAppBar: false),
       ),
       const _HomePageConfig(
         title: 'Mural',
