@@ -136,6 +136,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (_launchingBoatIds.contains(boat.id)) return;
 
     final repository = ref.read(launchQueueRepositoryProvider);
+    final userId = ref.read(userProvider)?.id;
     final messenger = ScaffoldMessenger.of(context);
 
     String? marinaId = boat.marinaId;
@@ -176,6 +177,40 @@ class _HomePageState extends ConsumerState<HomePage> {
       );
 
       if (marinaId == null || marinaId.isEmpty || !context.mounted) {
+        return;
+      }
+    }
+
+    final isBoatOwner = boat.canEdit(userId);
+    if (isBoatOwner) {
+      try {
+        final hasEntryToday = await repository.hasActiveEntryForBoatOnDate(
+          boatId: boat.id,
+          referenceDate: DateTime.now(),
+        );
+
+        if (hasEntryToday) {
+          if (mounted) {
+            messenger.showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Você já possui um registro na fila para hoje.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      } catch (error) {
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Não foi possível verificar registros anteriores: $error',
+              ),
+            ),
+          );
+        }
         return;
       }
     }

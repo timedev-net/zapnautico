@@ -14,6 +14,7 @@ class LaunchQueueRepository {
   final SupabaseClient _client;
   static const _bucket = 'boat_launch_queue_photos';
   static const _uuid = Uuid();
+  static const _activeStatuses = ['pending', 'in_progress', 'in_water'];
 
   Future<List<LaunchQueueEntry>> fetchEntries({
     String? marinaId,
@@ -73,6 +74,28 @@ class LaunchQueueRepository {
     });
 
     return entries;
+  }
+
+  Future<bool> hasActiveEntryForBoatOnDate({
+    required String boatId,
+    required DateTime referenceDate,
+  }) async {
+    if (boatId.isEmpty) return false;
+
+    final dayStart =
+        DateTime(referenceDate.year, referenceDate.month, referenceDate.day);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+
+    final response = await _client
+        .from('boat_launch_queue')
+        .select('id')
+        .eq('boat_id', boatId)
+        .inFilter('status', _activeStatuses)
+        .gte('requested_at', dayStart.toUtc().toIso8601String())
+        .lt('requested_at', dayEnd.toUtc().toIso8601String())
+        .limit(1);
+
+    return (response as List).isNotEmpty;
   }
 
   Future<String> createEntry({
