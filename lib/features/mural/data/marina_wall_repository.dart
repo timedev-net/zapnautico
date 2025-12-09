@@ -30,6 +30,22 @@ class MarinaWallRepository {
     );
   }
 
+  Future<MarinaWallPost?> fetchPostById(String id) async {
+    if (id.isEmpty) return null;
+
+    final response = await _client
+        .from('marina_wall_posts_view')
+        .select(
+          'id,marina_id,marina_name,title,description,type,start_date,end_date,image_url,image_path,created_by,created_by_name,created_at,updated_at',
+        )
+        .eq('id', id)
+        .maybeSingle();
+
+    final Map<String, dynamic>? data = response;
+    if (data == null) return null;
+    return MarinaWallPost.fromMap(data);
+  }
+
   Future<MuralPostCreationResult> createPost({
     required String marinaId,
     required String title,

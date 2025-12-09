@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/push_notifications/push_notification_handler.dart';
 import 'core/push_notifications/push_token_registrar.dart';
 import 'core/supabase_providers.dart';
 import 'core/theme.dart';
@@ -22,6 +23,7 @@ class ZapNauticoApp extends ConsumerWidget {
         );
       },
     );
+    ref.read(pushNotificationHandlerProvider);
 
     return MaterialApp(
       title: 'ZapNáutico',

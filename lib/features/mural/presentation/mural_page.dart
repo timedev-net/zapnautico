@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../domain/marina_wall_post.dart';
 import '../providers.dart';
+import 'marina_wall_post_detail_page.dart';
 import 'mural_form_page.dart';
 
 class MuralPage extends ConsumerStatefulWidget {
@@ -224,83 +225,91 @@ class _MuralCard extends StatelessWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (post.hasImage)
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Image.network(
-                post.imageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Center(child: Icon(Icons.broken_image)),
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MarinaWallPostDetailPage(postId: post.id),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (post.hasImage)
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Image.network(
+                  post.imageUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: const Center(child: Icon(Icons.broken_image)),
+                  ),
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Chip(
+                        label: Text(muralPostTypeLabels[post.type] ?? post.type),
+                        backgroundColor: _typeColor(context, post.type),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.calendar_today,
+                        size: 16,
+                        color: Theme.of(context).hintColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        dateLabel,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    post.title,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    post.description ?? 'Sem descricao informada.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.sailing, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        post.marinaName ?? 'Marina',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.schedule,
+                        size: 16,
+                        color: Theme.of(context).hintColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('dd/MM/yyyy')
+                            .format(post.createdAt.toLocal()),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Chip(
-                      label: Text(muralPostTypeLabels[post.type] ?? post.type),
-                      backgroundColor: _typeColor(context, post.type),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.calendar_today,
-                      size: 16,
-                      color: Theme.of(context).hintColor,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      dateLabel,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  post.title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  post.description ?? 'Sem descricao informada.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.sailing, size: 18),
-                    const SizedBox(width: 6),
-                    Text(
-                      post.marinaName ?? 'Marina',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const Spacer(),
-                    Icon(
-                      Icons.schedule,
-                      size: 16,
-                      color: Theme.of(context).hintColor,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      DateFormat('dd/MM/yyyy').format(post.createdAt.toLocal()),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

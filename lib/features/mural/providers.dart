@@ -10,6 +10,11 @@ final muralPostsProvider = StreamProvider<List<MarinaWallPost>>((ref) {
   return ref.watch(marinaWallRepositoryProvider).watchPosts();
 });
 
+final marinaWallPostProvider =
+    FutureProvider.family<MarinaWallPost?, String>((ref, postId) {
+  return ref.watch(marinaWallRepositoryProvider).fetchPostById(postId);
+});
+
 final currentMarinaProfileProvider = Provider<UserProfileAssignment?>((ref) {
   final profiles = ref.watch(currentUserProfilesProvider);
   return profiles.maybeWhen(

@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_controller.dart';
+import '../../../core/push_notifications/push_navigation_intent.dart';
+import '../../mural/presentation/marina_wall_post_detail_page.dart';
 import '../../mural/presentation/mural_page.dart';
 import '../../profile/presentation/profile_page.dart';
+import '../../queue/providers.dart';
 import '../../queue/presentation/queue_crud_page.dart';
 import 'home_page.dart';
+import 'home_tab_provider.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -15,10 +19,38 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  var _selectedIndex = 0;
+  late final ProviderSubscription<PushNavigationIntent?> _pushIntentSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialIntent = ref.read(pushNavigationIntentProvider);
+    if (initialIntent != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _handlePushIntent(initialIntent);
+        }
+      });
+    }
+    _pushIntentSubscription = ref.listenManual<PushNavigationIntent?>(
+      pushNavigationIntentProvider,
+      (previous, next) {
+        if (next != null) {
+          _handlePushIntent(next);
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _pushIntentSubscription.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = ref.watch(homeTabIndexProvider);
     final pages = [
       const _HomePageConfig(
         title: 'Inicio',
@@ -42,7 +74,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ),
     ];
 
-    final currentPage = pages[_selectedIndex];
+    final currentPage =
+        pages[selectedIndex.clamp(0, pages.length - 1).toInt()];
     final authController = ref.watch(authControllerProvider);
 
     return Scaffold(
@@ -58,16 +91,55 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ),
       body: SafeArea(child: currentPage.body),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (value) {
-          setState(() {
-            _selectedIndex = value;
-          });
-        },
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (value) =>
+            ref.read(homeTabIndexProvider.notifier).state = value,
         destinations: [
           for (final page in pages)
             NavigationDestination(icon: Icon(page.icon), label: page.title),
         ],
+      ),
+    );
+  }
+
+  Future<void> _handlePushIntent(PushNavigationIntent intent) async {
+    ref.read(pushNavigationIntentProvider.notifier).state = null;
+    if (!mounted) return;
+
+    switch (intent.type) {
+      case PushNavigationType.queueStatus:
+        _goToQueue(intent);
+        break;
+      case PushNavigationType.muralPost:
+        await _goToMuralDetail(intent);
+        break;
+    }
+  }
+
+  void _goToQueue(PushNavigationIntent intent) {
+    ref.read(homeTabIndexProvider.notifier).state = homeTabQueueIndex;
+
+    final marinaId = intent.marinaId;
+    if (marinaId != null && marinaId.isNotEmpty) {
+      ref.read(queueFilterProvider.notifier).state = marinaId;
+      ref.invalidate(queueEntriesProvider);
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _goToMuralDetail(PushNavigationIntent intent) async {
+    ref.read(homeTabIndexProvider.notifier).state = homeTabMuralIndex;
+    if (!mounted) return;
+
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    final postId = intent.postId;
+    if (postId == null || postId.isEmpty) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MarinaWallPostDetailPage(postId: postId),
       ),
     );
   }

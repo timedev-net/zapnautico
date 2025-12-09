@@ -16,6 +16,7 @@ import '../../marinas/providers.dart';
 import '../../user_profiles/domain/marina_roles.dart';
 import '../../user_profiles/providers.dart';
 import '../data/launch_queue_repository.dart';
+import '../data/queue_notification_service.dart';
 import '../domain/launch_queue_entry.dart';
 import '../providers.dart';
 import 'queue_entry_gallery_page.dart';
@@ -83,9 +84,8 @@ class QueueCrudPage extends ConsumerWidget {
       ),
       body: entriesAsync.when(
         data: (state) {
-          final entries = hasMarinaProfile
-              ? _filterEntriesForSelectedTab(state.entries, selectedStatusTab)
-              : state.entries;
+          final entries =
+              _filterEntriesForSelectedTab(state.entries, selectedStatusTab);
           final Map<_QueueStatusTab, int> statusCounts =
               _countEntriesByTab(state.entries);
           String? selectedMarinaName;
@@ -104,22 +104,20 @@ class QueueCrudPage extends ConsumerWidget {
               selectedMarinaId != null &&
               selectedMarinaId.isNotEmpty &&
               selectedMarinaId != queueNoMarinaFilterValue;
-          final filterTopPadding = hasMarinaProfile ? 8.0 : 16.0;
+          const filterTopPadding = 8.0;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (hasMarinaProfile)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: _QueueStatusSummary(
-                    counts: statusCounts,
-                    selectedTab: selectedStatusTab,
-                    onTabSelected: (tab) => ref
-                        .read(_queueStatusTabProvider.notifier)
-                        .state = tab,
-                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: _QueueStatusSummary(
+                  counts: statusCounts,
+                  selectedTab: selectedStatusTab,
+                  onTabSelected: (tab) =>
+                      ref.read(_queueStatusTabProvider.notifier).state = tab,
                 ),
+              ),
               if (!hasLockedMarinaFilter)
                 Padding(
                   padding:
@@ -290,8 +288,9 @@ class QueueCrudPage extends ConsumerWidget {
     final repository = ref.read(launchQueueRepositoryProvider);
 
     try {
+      String? createdEntryId;
       if (entry == null) {
-        await repository.createEntry(
+        createdEntryId = await repository.createEntry(
           marinaId: result.marinaId,
           boatId: result.boatId,
           genericBoatName: result.genericBoatName,
@@ -308,6 +307,18 @@ class QueueCrudPage extends ConsumerWidget {
           clearProcessedAt: result.status == 'pending',
           genericBoatName: result.genericBoatName ?? '',
           newPhotos: result.photos,
+        );
+      }
+
+      final updatedEntryId = entry?.id ?? createdEntryId;
+      if (updatedEntryId != null) {
+        unawaited(
+          _notifyStatusChange(
+            ref,
+            entryId: updatedEntryId,
+            status: result.status,
+            previousStatus: entry?.status,
+          ),
         );
       }
 
@@ -522,6 +533,15 @@ class QueueCrudPage extends ConsumerWidget {
         processedAt: DateTime.now(),
       );
 
+      unawaited(
+        _notifyStatusChange(
+          ref,
+          entryId: entry.id,
+          status: 'cancelled',
+          previousStatus: entry.status,
+        ),
+      );
+
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
 
@@ -543,6 +563,21 @@ class QueueCrudPage extends ConsumerWidget {
     } finally {
       notifier.state = false;
     }
+  }
+
+  Future<void> _notifyStatusChange(
+    WidgetRef ref, {
+    required String entryId,
+    required String status,
+    String? previousStatus,
+  }) async {
+    if (entryId.isEmpty || status.isEmpty) return;
+    if (previousStatus != null && previousStatus == status) return;
+    if (previousStatus == null && status == 'pending') return;
+
+    await ref
+        .read(queueNotificationServiceProvider)
+        .notifyStatusChange(entryId: entryId, status: status);
   }
 
   void _cancelScheduledTransition(String entryId) {
@@ -576,6 +611,15 @@ class QueueCrudPage extends ConsumerWidget {
 
     try {
       await repository.updateEntry(entryId: entry.id, status: 'in_progress');
+
+      unawaited(
+        _notifyStatusChange(
+          ref,
+          entryId: entry.id,
+          status: 'in_progress',
+          previousStatus: entry.status,
+        ),
+      );
 
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
@@ -626,6 +670,15 @@ class QueueCrudPage extends ConsumerWidget {
 
     try {
       await repository.updateEntry(entryId: entry.id, status: 'in_progress');
+
+      unawaited(
+        _notifyStatusChange(
+          ref,
+          entryId: entry.id,
+          status: 'in_progress',
+          previousStatus: entry.status,
+        ),
+      );
 
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
@@ -678,6 +731,15 @@ class QueueCrudPage extends ConsumerWidget {
         entryId: entry.id,
         status: previousStatus,
         clearProcessedAt: previousStatus == 'pending',
+      );
+
+      unawaited(
+        _notifyStatusChange(
+          ref,
+          entryId: entry.id,
+          status: previousStatus,
+          previousStatus: entry.status,
+        ),
       );
 
       ref.invalidate(queueEntriesProvider);
@@ -769,6 +831,12 @@ class QueueCrudPage extends ConsumerWidget {
           status: 'in_water',
           processedAt: DateTime.now(),
         );
+        await _notifyStatusChange(
+          ref,
+          entryId: entryId,
+          status: 'in_water',
+          previousStatus: 'in_progress',
+        );
         ref.invalidate(queueEntriesProvider);
       } catch (_) {
         // Best-effort; user can refresh manually if update fails.
@@ -797,6 +865,12 @@ class QueueCrudPage extends ConsumerWidget {
           entryId: entryId,
           status: 'completed',
           processedAt: DateTime.now(),
+        );
+        await _notifyStatusChange(
+          ref,
+          entryId: entryId,
+          status: 'completed',
+          previousStatus: 'in_progress',
         );
         ref.invalidate(queueEntriesProvider);
       } catch (_) {
@@ -890,6 +964,14 @@ class QueueCrudPage extends ConsumerWidget {
         entryId: entry.id,
         status: 'completed',
         processedAt: DateTime.now(),
+      );
+      unawaited(
+        _notifyStatusChange(
+          ref,
+          entryId: entry.id,
+          status: 'completed',
+          previousStatus: entry.status,
+        ),
       );
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
@@ -999,6 +1081,7 @@ class _QueueStatusSummary extends StatelessWidget {
                 (item) => _StatusCountChip(
                   icon: item.icon,
                   label: item.label,
+                  status: item.status,
                   count: counts[item.tab] ?? 0,
                   selected: selectedTab == item.tab,
                   onPressed: () => onTabSelected(item.tab),
@@ -1016,6 +1099,7 @@ class _StatusCountChip extends StatelessWidget {
   const _StatusCountChip({
     required this.icon,
     required this.label,
+    required this.status,
     required this.count,
     required this.selected,
     required this.onPressed,
@@ -1024,6 +1108,7 @@ class _StatusCountChip extends StatelessWidget {
 
   final IconData icon;
   final String label;
+  final String status;
   final int count;
   final bool selected;
   final VoidCallback onPressed;
@@ -1031,28 +1116,30 @@ class _StatusCountChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background = selected
-        ? colorScheme.primaryContainer
-        : colorScheme.surfaceContainerHighest;
-    final foreground = selected
-        ? colorScheme.onPrimaryContainer
-        : colorScheme.onSurfaceVariant;
+    final background = _statusBackgroundColor(status);
+    final borderColor = _statusAccentColor(status);
+    final foreground = _statusForegroundColor(status, colorScheme);
 
     return FilterChip(
       selected: selected,
       showCheckmark: false,
-      avatar: Icon(icon, size: 18, color: foreground),
+      avatar: Icon(
+        icon,
+        size: 18,
+        color: selected ? foreground : borderColor,
+      ),
       label: Text('$label: $count'),
       onSelected: (_) => onPressed(),
       backgroundColor: background,
       selectedColor: background,
       side: BorderSide(
-        color: selected ? colorScheme.primary : colorScheme.outlineVariant,
+        color:
+            selected ? borderColor : borderColor.withAlpha((0.6 * 255).round()),
       ),
       labelStyle: Theme.of(context)
           .textTheme
           .bodyMedium
-          ?.copyWith(color: foreground, fontWeight: FontWeight.w600),
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w700),
     );
   }
 }
@@ -1060,11 +1147,13 @@ class _StatusCountChip extends StatelessWidget {
 class _StatusSummaryItem {
   const _StatusSummaryItem({
     required this.tab,
+    required this.status,
     required this.label,
     required this.icon,
   });
 
   final _QueueStatusTab tab;
+  final String status;
   final String label;
   final IconData icon;
 }
@@ -1072,25 +1161,69 @@ class _StatusSummaryItem {
 const _statusSummaryItems = <_StatusSummaryItem>[
   _StatusSummaryItem(
     tab: _QueueStatusTab.pending,
+    status: 'pending',
     label: 'Pendentes',
     icon: Icons.pending_actions_outlined,
   ),
   _StatusSummaryItem(
     tab: _QueueStatusTab.inWater,
+    status: 'in_water',
     label: 'Na água',
     icon: Icons.water_drop_outlined,
   ),
   _StatusSummaryItem(
     tab: _QueueStatusTab.completed,
+    status: 'completed',
     label: 'Concluídos',
     icon: Icons.check_circle_outline,
   ),
   _StatusSummaryItem(
     tab: _QueueStatusTab.cancelled,
+    status: 'cancelled',
     label: 'Cancelados',
     icon: Icons.cancel_outlined,
   ),
 ];
+
+Color _statusBackgroundColor(String status) {
+  switch (status) {
+    case 'pending':
+      return const Color(0xFFFFF4E5); // laranja bem claro
+    case 'in_progress':
+      return const Color(0xFFFFE0B2); // laranja mais escuro
+    case 'in_water':
+      return const Color(0xFFE3F2FD); // azul claro
+    case 'completed':
+      return const Color(0xFFE6F4EA); // verde claro
+    case 'cancelled':
+      return const Color(0xFFFFEBEE); // vermelho claro
+    default:
+      return Colors.transparent;
+  }
+}
+
+Color _statusAccentColor(String status) {
+  switch (status) {
+    case 'pending':
+      return const Color(0xFFF57C00);
+    case 'in_progress':
+      return const Color(0xFFE65100);
+    case 'in_water':
+      return const Color(0xFF1E88E5);
+    case 'completed':
+      return const Color(0xFF2E7D32);
+    case 'cancelled':
+      return const Color(0xFFC62828);
+    default:
+      return Colors.grey.shade600;
+  }
+}
+
+Color _statusForegroundColor(String status, ColorScheme colorScheme) {
+  final accent = _statusAccentColor(status);
+  if (accent == Colors.transparent) return colorScheme.onSurfaceVariant;
+  return accent;
+}
 
 class _QueueEntriesList extends StatelessWidget {
   const _QueueEntriesList({
@@ -1353,14 +1486,9 @@ class _QueueEntriesList extends StatelessWidget {
   }
 
   Color? _cardColor(String status, ThemeData theme) {
-    switch (status) {
-      case 'in_progress':
-        return Colors.orange.shade50;
-      case 'in_water':
-        return Colors.lightBlue.shade50;
-      default:
-        return null;
-    }
+    final color = _statusBackgroundColor(status);
+    if (color == Colors.transparent) return null;
+    return color;
   }
 }
 
