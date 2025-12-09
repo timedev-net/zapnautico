@@ -15,8 +15,9 @@ import '../../queue/presentation/marina_queue_dashboard_page.dart';
 import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 
-final ownedBoatsLatestQueueEntriesProvider =
-    FutureProvider<Map<String, LaunchQueueEntry>>((ref) async {
+
+final ownedBoatsLatestQueueStreamProvider =
+    StreamProvider<Map<String, LaunchQueueEntry>>((ref) async* {
       final boats = await ref.watch(boatsProvider.future);
       final userId = ref.watch(userProvider)?.id;
       final ownedBoatIds = boats
@@ -25,67 +26,35 @@ final ownedBoatsLatestQueueEntriesProvider =
           .where((id) => id.isNotEmpty)
           .toList();
 
-      if (ownedBoatIds.isEmpty) return {};
+      if (ownedBoatIds.isEmpty) {
+        yield {};
+        return;
+      }
 
-      final repository = ref.watch(launchQueueRepositoryProvider);
-      return repository.fetchLatestEntriesForBoats(boatIds: ownedBoatIds);
+      final client = ref.watch(supabaseClientProvider);
+      var stream = client
+          .from('boat_launch_queue_view')
+          .stream(primaryKey: ['id'])
+          .in_('boat_id', ownedBoatIds);
+
+      await for (final rows in stream) {
+        final entries = rows
+            .cast<Map<String, dynamic>>()
+            .map(LaunchQueueEntry.fromMap)
+            .toList()
+          ..sort(
+            (a, b) => b.requestedAt.compareTo(a.requestedAt),
+          );
+
+        final latestByBoat = <String, LaunchQueueEntry>{};
+        for (final entry in entries) {
+          if (entry.boatId.isEmpty) continue;
+          latestByBoat.putIfAbsent(entry.boatId, () => entry);
+        }
+
+        yield latestByBoat;
+      }
     });
-
-/// Keeps the owner's boat buttons in sync with queue updates.
-final homeQueueRealtimeSyncProvider = Provider.autoDispose<void>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  final userId = ref.watch(userProvider)?.id;
-  final boatsAsync = ref.watch(boatsProvider);
-  final boatIds = boatsAsync.asData?.value
-          .map((boat) => boat.id)
-          .where((id) => id.isNotEmpty)
-          .toList() ??
-      const <String>[];
-
-  if (userId == null || userId.isEmpty) return;
-
-  final channel = client.channel('realtime-home-queue');
-
-  void refresh() {
-    ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
-  }
-
-  final filters = <String>[];
-  filters.add('requested_by=eq.$userId');
-  if (boatIds.isNotEmpty) {
-    filters.add('boat_id=in.(${boatIds.join(',')})');
-  }
-  if (filters.isEmpty) {
-    filters.add('');
-  }
-
-  for (final filter in filters) {
-    for (final event in [
-      PostgresChangeEvent.insert,
-      PostgresChangeEvent.update,
-      PostgresChangeEvent.delete,
-    ]) {
-      channel.onPostgresChanges(
-        event: event,
-        schema: 'public',
-        table: 'boat_launch_queue',
-        filter: filter.isEmpty ? null : filter,
-        callback: (_) => refresh(),
-      );
-    }
-  }
-
-  channel.subscribe();
-
-  ref.onDispose(() async {
-    try {
-      await channel.unsubscribe();
-    } catch (_) {}
-    try {
-      await client.removeChannel(channel);
-    } catch (_) {}
-  });
-});
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -122,14 +91,12 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(homeQueueRealtimeSyncProvider);
-
-    final theme = Theme.of(context);
+        final theme = Theme.of(context);
     final profilesAsync = ref.watch(currentUserProfilesProvider);
     final boatsAsync = ref.watch(boatsProvider);
     final userId = ref.watch(userProvider)?.id;
     final latestQueueEntriesAsync = ref.watch(
-      ownedBoatsLatestQueueEntriesProvider,
+      ownedBoatsLatestQueueStreamProvider,
     );
 
     final canAccessFinancial = profilesAsync.maybeWhen(
@@ -160,7 +127,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             Image.asset('assets/images/logo.png', height: 96),
             const SizedBox(height: 24),
             Text(
-              'Bem-vindo ao ZapNáutico',
+              'Bem-vindo ao ZapNÃ¡utico',
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -168,7 +135,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Navegue com confiança: organize embarcações, equipes e experiências náuticas em um só lugar.',
+              'Navegue com confianÃ§a: organize embarcaÃ§Ãµes, equipes e experiÃªncias nÃ¡uticas em um sÃ³ lugar.',
               style: theme.textTheme.bodyLarge,
               textAlign: TextAlign.center,
             ),
@@ -190,7 +157,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ),
                 ),
                 icon: const Icon(Icons.receipt_long),
-                label: const Text('Gestão financeira'),
+                label: const Text('GestÃ£o financeira'),
               ),
               const SizedBox(height: 12),
             ],
@@ -231,7 +198,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         if (mounted) {
           messenger.showSnackBar(
             SnackBar(
-              content: Text('Não foi possível carregar as marinas: $error'),
+              content: Text('NÃ£o foi possÃ­vel carregar as marinas: $error'),
             ),
           );
         }
@@ -243,7 +210,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       if (marinas.isEmpty) {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Nenhuma marina disponível. Cadastre uma marina.'),
+            content: Text('Nenhuma marina disponÃ­vel. Cadastre uma marina.'),
           ),
         );
         return;
@@ -277,7 +244,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Já existe um registro $statusLabel para esta embarcação.',
+            'JÃ¡ existe um registro $statusLabel para esta embarcaÃ§Ã£o.',
           ),
         ),
       );
@@ -289,17 +256,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     try {
       await repository.createEntry(marinaId: marinaId, boatId: boat.id);
 
-      ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
+      ref.invalidate(ownedBoatsLatestQueueStreamProvider);
       ref.invalidate(queueEntriesProvider);
 
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('${boat.name} adicionada à fila.')),
+        SnackBar(content: Text('${boat.name} adicionada Ã  fila.')),
       );
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Não foi possível descer a embarcação: $error')),
+        SnackBar(content: Text('NÃ£o foi possÃ­vel descer a embarcaÃ§Ã£o: $error')),
       );
     } finally {
       if (mounted) {
@@ -318,7 +285,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (entry.status == 'cancelled' || entry.status == 'completed') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registro já finalizado.')),
+          const SnackBar(content: Text('Registro jÃ¡ finalizado.')),
         );
       }
       return;
@@ -335,7 +302,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         clearScheduledTransition: true,
       );
 
-      ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
+      ref.invalidate(ownedBoatsLatestQueueStreamProvider);
       ref.invalidate(queueEntriesProvider);
 
       if (!context.mounted) return;
@@ -346,7 +313,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível cancelar: $error')),
+        SnackBar(content: Text('NÃ£o foi possÃ­vel cancelar: $error')),
       );
     } finally {
       if (mounted) {
@@ -365,7 +332,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (entry.status == 'completed' || entry.status == 'cancelled') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registro já finalizado.')),
+          const SnackBar(content: Text('Registro jÃ¡ finalizado.')),
         );
       }
       return;
@@ -382,7 +349,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         clearScheduledTransition: true,
       );
 
-      ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
+      ref.invalidate(ownedBoatsLatestQueueStreamProvider);
       ref.invalidate(queueEntriesProvider);
 
       if (!context.mounted) return;
@@ -393,7 +360,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível concluir o registro: $error')),
+        SnackBar(content: Text('NÃ£o foi possÃ­vel concluir o registro: $error')),
       );
     } finally {
       if (mounted) {
@@ -409,9 +376,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       case 'in_progress':
         return 'em andamento';
       case 'in_water':
-        return 'na água';
+        return 'na Ã¡gua';
       case 'completed':
-        return 'concluído';
+        return 'concluÃ­do';
       case 'cancelled':
         return 'cancelado';
       default:
@@ -459,13 +426,13 @@ class _OwnedBoatsSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Suas embarcações',
+              'Suas embarcaÃ§Ãµes',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             if (queueEntriesAsync.hasError) ...[
               const SizedBox(height: 8),
               Text(
-                'Não foi possível atualizar o status da fila agora.',
+                'NÃ£o foi possÃ­vel atualizar o status da fila agora.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.error,
                 ),
@@ -499,7 +466,7 @@ class _OwnedBoatsSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Não foi possível carregar suas embarcações.',
+              'NÃ£o foi possÃ­vel carregar suas embarcaÃ§Ãµes.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.error,
               ),
@@ -537,7 +504,7 @@ class _BoatCard extends StatelessWidget {
     final preview = boat.photos.isNotEmpty ? boat.photos.first.publicUrl : null;
     final status = latestEntry?.status;
 
-    String buttonText = 'Descer a embarcação';
+    String buttonText = 'Descer a embarcaÃ§Ã£o';
     VoidCallback? action = onLaunch;
 
     if (status == 'pending') {
@@ -547,7 +514,7 @@ class _BoatCard extends StatelessWidget {
       buttonText = 'Em andamento';
       action = null;
     } else if (status == 'in_water') {
-      buttonText = 'Subir embarcação';
+      buttonText = 'Subir embarcaÃ§Ã£o';
       action = onCompleteFromWater;
     }
 

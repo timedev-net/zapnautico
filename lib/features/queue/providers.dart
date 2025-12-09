@@ -88,8 +88,8 @@ final queueAppliedFilterProvider = Provider<String?>((ref) {
   return ownerDefault?.isNotEmpty == true ? ownerDefault : null;
 });
 
-final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
-  final repository = ref.watch(launchQueueRepositoryProvider);
+final queueEntriesProvider = StreamProvider<QueueEntriesState>((ref) async* {
+  final client = ref.watch(supabaseClientProvider);
   final profiles = await ref.watch(currentUserProfilesProvider.future);
   final currentUserId = ref.watch(userProvider)?.id ?? '';
 
@@ -107,63 +107,114 @@ final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
   final String? marinaFilter = hasMarinaProfile
       ? ref.watch(queueForcedMarinaIdProvider)
       : null;
-
   final marinaId = ref.watch(queueAppliedFilterProvider);
-  final entries = await repository.fetchEntries(
-    marinaId: marinaFilter,
-    fromDate: null,
-  );
 
-  Iterable<LaunchQueueEntry> filteredEntries = entries;
+  final statuses = [
+    'pending',
+    'in_progress',
+    'in_water',
+    'completed',
+    'cancelled',
+  ];
 
-  if (marinaId == queueNoMarinaFilterValue) {
-    filteredEntries = filteredEntries.where((entry) => entry.marinaId.isEmpty);
-  } else if (marinaId != null && marinaId.isNotEmpty) {
-    filteredEntries = filteredEntries.where(
-      (entry) => entry.marinaId == marinaId,
+  var stream = client
+      .from('boat_launch_queue_view')
+      .stream(primaryKey: ['id'])
+      .in_('status', statuses);
+
+  if (marinaFilter != null && marinaFilter.isNotEmpty) {
+    stream = stream.eq('marina_id', marinaFilter);
+  }
+
+  await for (final rows in stream) {
+    final baseEntries = rows
+        .cast<Map<String, dynamic>>()
+        .map(LaunchQueueEntry.fromMap)
+        .toList();
+
+    Iterable<LaunchQueueEntry> filteredEntries = baseEntries;
+
+    if (marinaId == queueNoMarinaFilterValue) {
+      filteredEntries =
+          filteredEntries.where((entry) => entry.marinaId.isEmpty);
+    } else if (marinaId != null && marinaId.isNotEmpty) {
+      filteredEntries = filteredEntries.where(
+        (entry) => entry.marinaId == marinaId,
+      );
+    }
+
+    final shouldLimitStatuses =
+        hasOwnerProfile && !hasAdminProfile && !hasMarinaProfile;
+    if (shouldLimitStatuses) {
+      filteredEntries = filteredEntries.where((entry) {
+        final isRequester =
+            currentUserId.isNotEmpty &&
+            entry.requestedBy.isNotEmpty &&
+            entry.requestedBy == currentUserId;
+        final isPendingOrInProgress =
+            entry.status == 'pending' || entry.status == 'in_progress';
+
+        return isRequester || isPendingOrInProgress;
+      });
+    }
+
+    if (hasMarinaProfile) {
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final todayEnd = todayStart.add(const Duration(days: 1));
+
+      filteredEntries = filteredEntries.where((entry) {
+        final requestedAtLocal = entry.requestedAt.toLocal();
+        final isToday =
+            !requestedAtLocal.isBefore(todayStart) &&
+            requestedAtLocal.isBefore(todayEnd);
+        if (isToday) return true;
+
+        final isActiveStatus =
+            entry.status != 'cancelled' && entry.status != 'completed';
+        return isActiveStatus;
+      });
+    }
+
+    final entries = filteredEntries.toList()
+      ..sort((a, b) {
+        int statusOrder(String status) {
+          switch (status) {
+            case 'in_progress':
+              return 0;
+            case 'pending':
+              return 1;
+            case 'in_water':
+              return 2;
+            case 'completed':
+              return 3;
+            case 'cancelled':
+              return 4;
+            default:
+              return 5;
+          }
+        }
+
+        final statusComparison =
+            statusOrder(a.status).compareTo(statusOrder(b.status));
+        if (statusComparison != 0) return statusComparison;
+
+        final positionComparison =
+            a.queuePosition.compareTo(b.queuePosition);
+        if (positionComparison != 0) return positionComparison;
+
+        final aReferenceTime = a.processedAt ?? a.requestedAt;
+        final bReferenceTime = b.processedAt ?? b.requestedAt;
+        return aReferenceTime.compareTo(bReferenceTime);
+      });
+
+    final inWaterCountForSelectedMarina =
+        entries.where((entry) => entry.status == 'in_water').length;
+
+    yield QueueEntriesState(
+      entries: entries,
+      inWaterCountForSelectedMarina: inWaterCountForSelectedMarina,
     );
   }
-
-  final shouldLimitStatuses =
-      hasOwnerProfile && !hasAdminProfile && !hasMarinaProfile;
-  if (shouldLimitStatuses) {
-    filteredEntries = filteredEntries.where((entry) {
-      final isRequester =
-          currentUserId.isNotEmpty &&
-          entry.requestedBy.isNotEmpty &&
-          entry.requestedBy == currentUserId;
-      final isPendingOrInProgress =
-          entry.status == 'pending' || entry.status == 'in_progress';
-
-      return isRequester || isPendingOrInProgress;
-    });
-  }
-
-  if (hasMarinaProfile) {
-    final todayStart = DateTime(now.year, now.month, now.day);
-    final todayEnd = todayStart.add(const Duration(days: 1));
-
-    filteredEntries = filteredEntries.where((entry) {
-      final requestedAtLocal = entry.requestedAt.toLocal();
-      final isToday =
-          !requestedAtLocal.isBefore(todayStart) &&
-          requestedAtLocal.isBefore(todayEnd);
-      if (isToday) return true;
-
-      final isActiveStatus =
-          entry.status != 'cancelled' && entry.status != 'completed';
-      return isActiveStatus;
-    });
-  }
-
-  final inWaterCountForSelectedMarina = filteredEntries
-      .where((entry) => entry.status == 'in_water')
-      .length;
-
-  return QueueEntriesState(
-    entries: filteredEntries.toList(),
-    inWaterCountForSelectedMarina: inWaterCountForSelectedMarina,
-  );
 });
 
 final queueOperationInProgressProvider = StateProvider<bool>((ref) => false);
