@@ -104,16 +104,14 @@ final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
   );
 
   final now = DateTime.now();
-  final DateTime? fromDate = hasMarinaProfile
-      ? DateTime(now.year, now.month, now.day)
+  final String? marinaFilter = hasMarinaProfile
+      ? ref.watch(queueForcedMarinaIdProvider)
       : null;
-  final String? marinaFilter =
-      hasMarinaProfile ? ref.watch(queueForcedMarinaIdProvider) : null;
 
   final marinaId = ref.watch(queueAppliedFilterProvider);
   final entries = await repository.fetchEntries(
     marinaId: marinaFilter,
-    fromDate: fromDate,
+    fromDate: null,
   );
 
   Iterable<LaunchQueueEntry> filteredEntries = entries;
@@ -129,17 +127,16 @@ final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
   final shouldLimitStatuses =
       hasOwnerProfile && !hasAdminProfile && !hasMarinaProfile;
   if (shouldLimitStatuses) {
-    filteredEntries = filteredEntries.where(
-      (entry) {
-        final isRequester = currentUserId.isNotEmpty &&
-            entry.requestedBy.isNotEmpty &&
-            entry.requestedBy == currentUserId;
-        final isPendingOrInProgress =
-            entry.status == 'pending' || entry.status == 'in_progress';
+    filteredEntries = filteredEntries.where((entry) {
+      final isRequester =
+          currentUserId.isNotEmpty &&
+          entry.requestedBy.isNotEmpty &&
+          entry.requestedBy == currentUserId;
+      final isPendingOrInProgress =
+          entry.status == 'pending' || entry.status == 'in_progress';
 
-        return isRequester || isPendingOrInProgress;
-      },
-    );
+      return isRequester || isPendingOrInProgress;
+    });
   }
 
   if (hasMarinaProfile) {
@@ -148,8 +145,14 @@ final queueEntriesProvider = FutureProvider<QueueEntriesState>((ref) async {
 
     filteredEntries = filteredEntries.where((entry) {
       final requestedAtLocal = entry.requestedAt.toLocal();
-      return !requestedAtLocal.isBefore(todayStart) &&
+      final isToday =
+          !requestedAtLocal.isBefore(todayStart) &&
           requestedAtLocal.isBefore(todayEnd);
+      if (isToday) return true;
+
+      final isActiveStatus =
+          entry.status != 'cancelled' && entry.status != 'completed';
+      return isActiveStatus;
     });
   }
 
@@ -221,8 +224,9 @@ class MarinaQueueDashboardData {
   final DateTime rangeStart;
 }
 
-final marinaQueueDashboardProvider =
-    FutureProvider<MarinaQueueDashboardData>((ref) async {
+final marinaQueueDashboardProvider = FutureProvider<MarinaQueueDashboardData>((
+  ref,
+) async {
   final profiles = await ref.watch(currentUserProfilesProvider.future);
   final marinaProfile = firstMarinaProfile(profiles);
   if (marinaProfile == null ||
@@ -233,8 +237,11 @@ final marinaQueueDashboardProvider =
 
   final repository = ref.watch(launchQueueRepositoryProvider);
   final now = DateTime.now();
-  final rangeStart = DateTime(now.year, now.month, now.day)
-      .subtract(const Duration(days: 13));
+  final rangeStart = DateTime(
+    now.year,
+    now.month,
+    now.day,
+  ).subtract(const Duration(days: 13));
 
   final entries = await repository.fetchEntries(
     marinaId: marinaProfile.marinaId,

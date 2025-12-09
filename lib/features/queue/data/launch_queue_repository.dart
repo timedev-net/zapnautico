@@ -16,6 +16,38 @@ class LaunchQueueRepository {
   static const _uuid = Uuid();
   static const _activeStatuses = ['pending', 'in_progress', 'in_water'];
 
+  Future<Map<String, LaunchQueueEntry>> fetchLatestEntriesForBoats({
+    required List<String> boatIds,
+  }) async {
+    if (boatIds.isEmpty) return {};
+
+    final response = await _client
+        .from('boat_launch_queue_view')
+        .select()
+        .inFilter('boat_id', boatIds)
+        .order('requested_at', ascending: false);
+
+    final entries = (response as List).cast<Map<String, dynamic>>().map(
+      LaunchQueueEntry.fromMap,
+    );
+
+    final latestByBoat = <String, LaunchQueueEntry>{};
+    for (final entry in entries) {
+      if (entry.boatId.isEmpty) continue;
+      latestByBoat.putIfAbsent(entry.boatId, () => entry);
+      if (latestByBoat.length == boatIds.length) break;
+    }
+
+    return latestByBoat;
+  }
+
+  Future<LaunchQueueEntry?> fetchLatestEntryForBoat(String boatId) async {
+    if (boatId.isEmpty) return null;
+
+    final entries = await fetchLatestEntriesForBoats(boatIds: [boatId]);
+    return entries[boatId];
+  }
+
   Future<List<LaunchQueueEntry>> fetchEntries({
     String? marinaId,
     DateTime? fromDate,
@@ -61,8 +93,9 @@ class LaunchQueueRepository {
         }
       }
 
-      final statusComparison =
-          statusOrder(a.status).compareTo(statusOrder(b.status));
+      final statusComparison = statusOrder(
+        a.status,
+      ).compareTo(statusOrder(b.status));
       if (statusComparison != 0) return statusComparison;
 
       final positionComparison = a.queuePosition.compareTo(b.queuePosition);
@@ -82,8 +115,11 @@ class LaunchQueueRepository {
   }) async {
     if (boatId.isEmpty) return false;
 
-    final dayStart =
-        DateTime(referenceDate.year, referenceDate.month, referenceDate.day);
+    final dayStart = DateTime(
+      referenceDate.year,
+      referenceDate.month,
+      referenceDate.day,
+    );
     final dayEnd = dayStart.add(const Duration(days: 1));
 
     final response = await _client
@@ -108,17 +144,15 @@ class LaunchQueueRepository {
     final normalizedGenericName = genericBoatName?.trim();
 
     final hasBoat = boatId != null && boatId.isNotEmpty;
-    final hasGenericName = normalizedGenericName != null &&
-        normalizedGenericName.isNotEmpty;
+    final hasGenericName =
+        normalizedGenericName != null && normalizedGenericName.isNotEmpty;
     if (!hasBoat && !hasGenericName) {
       throw ArgumentError(
         'Informe uma embarcação ou uma descrição para a fila.',
       );
     }
 
-    final payload = <String, dynamic>{
-      'status': status,
-    };
+    final payload = <String, dynamic>{'status': status};
 
     if (marinaId != null && marinaId.isNotEmpty) {
       payload['marina_id'] = marinaId;
@@ -192,8 +226,9 @@ class LaunchQueueRepository {
 
     if (genericBoatName != null) {
       final normalized = genericBoatName.trim();
-      updatePayload['generic_boat_name'] =
-          normalized.isEmpty ? null : normalized;
+      updatePayload['generic_boat_name'] = normalized.isEmpty
+          ? null
+          : normalized;
     }
 
     if (updatePayload.isEmpty) {
@@ -224,7 +259,9 @@ class LaunchQueueRepository {
 
     if (uploads.isEmpty) return;
 
-    await _client.from('boat_launch_queue_photos').insert(
+    await _client
+        .from('boat_launch_queue_photos')
+        .insert(
           uploads
               .map(
                 (photo) => {
@@ -243,10 +280,11 @@ class LaunchQueueRepository {
   }) async {
     final bytes = await file.readAsBytes();
     final extension = _resolveExtension(file);
-    final storagePath =
-        'queue_entries/$entryId/${_uuid.v4()}$extension';
+    final storagePath = 'queue_entries/$entryId/${_uuid.v4()}$extension';
 
-    await _client.storage.from(_bucket).uploadBinary(
+    await _client.storage
+        .from(_bucket)
+        .uploadBinary(
           storagePath,
           bytes,
           fileOptions: FileOptions(
@@ -256,10 +294,7 @@ class LaunchQueueRepository {
         );
 
     final publicUrl = _client.storage.from(_bucket).getPublicUrl(storagePath);
-    return {
-      'path': storagePath,
-      'publicUrl': publicUrl,
-    };
+    return {'path': storagePath, 'publicUrl': publicUrl};
   }
 
   Future<Map<String, List<LaunchQueuePhoto>>> _fetchQueuePhotos(
@@ -304,10 +339,7 @@ class LaunchQueueRepository {
     }
 
     return photosByEntry.map(
-      (key, value) => MapEntry(
-        key,
-        List<LaunchQueuePhoto>.unmodifiable(value),
-      ),
+      (key, value) => MapEntry(key, List<LaunchQueuePhoto>.unmodifiable(value)),
     );
   }
 
