@@ -199,6 +199,7 @@ class LaunchQueueRepository {
     String? status,
     DateTime? processedAt,
     bool clearProcessedAt = false,
+    bool clearScheduledTransition = false,
     String? genericBoatName,
     List<XFile> newPhotos = const [],
   }) async {
@@ -222,6 +223,15 @@ class LaunchQueueRepository {
       updatePayload['processed_at'] = processedAt.toUtc().toIso8601String();
     } else if (clearProcessedAt) {
       updatePayload['processed_at'] = null;
+    }
+
+    final shouldClearScheduled =
+        clearScheduledTransition || (status != null && status != 'in_progress');
+
+    if (shouldClearScheduled) {
+      updatePayload['auto_transition_to'] = null;
+      updatePayload['auto_transition_at'] = null;
+      updatePayload['auto_transition_requested_by'] = null;
     }
 
     if (genericBoatName != null) {
@@ -272,6 +282,30 @@ class LaunchQueueRepository {
               )
               .toList(),
         );
+  }
+
+  Future<void> scheduleTransition({
+    required String entryId,
+    required String targetStatus,
+    required int delayMinutes,
+  }) async {
+    if (entryId.isEmpty) {
+      throw ArgumentError('Informe o registro da fila.');
+    }
+
+    if (targetStatus != 'in_water' && targetStatus != 'completed') {
+      throw ArgumentError('Status invalido para agendamento.');
+    }
+
+    if (delayMinutes <= 0) {
+      throw ArgumentError('Informe um tempo valido em minutos.');
+    }
+
+    await _client.rpc('schedule_launch_queue_transition', params: {
+      'entry_id': entryId,
+      'target_status': targetStatus,
+      'delay_minutes': delayMinutes,
+    });
   }
 
   Future<Map<String, String>> _uploadPhoto({

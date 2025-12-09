@@ -21,7 +21,6 @@ import '../domain/launch_queue_entry.dart';
 import '../providers.dart';
 import 'queue_entry_gallery_page.dart';
 
-final _scheduledStatusTimers = <String, Timer>{};
 final _inProgressPreviousStatuses = <String, String>{};
 
 enum _QueueStatusTab { pending, inWater, completed, cancelled }
@@ -305,6 +304,7 @@ class QueueCrudPage extends ConsumerWidget {
           status: result.status,
           processedAt: result.status == 'pending' ? null : DateTime.now(),
           clearProcessedAt: result.status == 'pending',
+          clearScheduledTransition: true,
           genericBoatName: result.genericBoatName ?? '',
           newPhotos: result.photos,
         );
@@ -522,7 +522,6 @@ class QueueCrudPage extends ConsumerWidget {
 
     final notifier = ref.read(queueOperationInProgressProvider.notifier);
     notifier.state = true;
-    _cancelScheduledTransition(entry.id);
 
     final repository = ref.read(launchQueueRepositoryProvider);
 
@@ -531,6 +530,7 @@ class QueueCrudPage extends ConsumerWidget {
         entryId: entry.id,
         status: 'cancelled',
         processedAt: DateTime.now(),
+        clearScheduledTransition: true,
       );
 
       unawaited(
@@ -580,11 +580,6 @@ class QueueCrudPage extends ConsumerWidget {
         .notifyStatusChange(entryId: entryId, status: status);
   }
 
-  void _cancelScheduledTransition(String entryId) {
-    final timer = _scheduledStatusTimers.remove(entryId);
-    timer?.cancel();
-  }
-
   void _registerPreviousStatus(LaunchQueueEntry entry) {
     _inProgressPreviousStatuses[entry.id] = entry.status;
   }
@@ -602,7 +597,6 @@ class QueueCrudPage extends ConsumerWidget {
     if (minutes == null) return;
 
     _registerPreviousStatus(entry);
-    _cancelScheduledTransition(entry.id);
 
     final notifier = ref.read(queueOperationInProgressProvider.notifier);
     notifier.state = true;
@@ -610,7 +604,11 @@ class QueueCrudPage extends ConsumerWidget {
     final repository = ref.read(launchQueueRepositoryProvider);
 
     try {
-      await repository.updateEntry(entryId: entry.id, status: 'in_progress');
+      await repository.scheduleTransition(
+        entryId: entry.id,
+        targetStatus: 'in_water',
+        delayMinutes: minutes,
+      );
 
       unawaited(
         _notifyStatusChange(
@@ -624,13 +622,11 @@ class QueueCrudPage extends ConsumerWidget {
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
 
-      unawaited(_scheduleMoveToInWater(ref, entry.id, minutes));
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '"${entry.displayBoatName}" em andamento por $minutes min.',
+              '"${entry.displayBoatName}" agendado para ficar na água em $minutes min (processo no servidor).',
             ),
           ),
         );
@@ -661,7 +657,6 @@ class QueueCrudPage extends ConsumerWidget {
     if (minutes == null) return;
 
     _registerPreviousStatus(entry);
-    _cancelScheduledTransition(entry.id);
 
     final notifier = ref.read(queueOperationInProgressProvider.notifier);
     notifier.state = true;
@@ -669,7 +664,11 @@ class QueueCrudPage extends ConsumerWidget {
     final repository = ref.read(launchQueueRepositoryProvider);
 
     try {
-      await repository.updateEntry(entryId: entry.id, status: 'in_progress');
+      await repository.scheduleTransition(
+        entryId: entry.id,
+        targetStatus: 'completed',
+        delayMinutes: minutes,
+      );
 
       unawaited(
         _notifyStatusChange(
@@ -683,13 +682,11 @@ class QueueCrudPage extends ConsumerWidget {
       ref.invalidate(queueEntriesProvider);
       await ref.read(queueEntriesProvider.future);
 
-      unawaited(_scheduleMoveToCompleted(ref, entry.id, minutes));
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '"${entry.displayBoatName}" subindo por $minutes min.',
+              '"${entry.displayBoatName}" agendado para concluir em $minutes min (processo no servidor).',
             ),
           ),
         );
@@ -724,13 +721,13 @@ class QueueCrudPage extends ConsumerWidget {
     notifier.state = true;
 
     final repository = ref.read(launchQueueRepositoryProvider);
-    _cancelScheduledTransition(entry.id);
 
     try {
       await repository.updateEntry(
         entryId: entry.id,
         status: previousStatus,
         clearProcessedAt: previousStatus == 'pending',
+        clearScheduledTransition: true,
       );
 
       unawaited(
@@ -790,7 +787,7 @@ class QueueCrudPage extends ConsumerWidget {
             validator: (value) {
               final parsed = int.tryParse(value ?? '');
               if (parsed == null || parsed <= 0) {
-                return 'Informe um tempo válido em minutos.';
+                return 'Informe um tempo valido em minutos.';
               }
               return null;
             },
@@ -812,76 +809,6 @@ class QueueCrudPage extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  Future<void> _scheduleMoveToInWater(
-    WidgetRef ref,
-    String entryId,
-    int minutes,
-  ) async {
-    _cancelScheduledTransition(entryId);
-    late Timer timer;
-    timer = Timer(Duration(minutes: minutes), () async {
-      if (_scheduledStatusTimers[entryId] != timer) return;
-
-      final repository = ref.read(launchQueueRepositoryProvider);
-      try {
-        await repository.updateEntry(
-          entryId: entryId,
-          status: 'in_water',
-          processedAt: DateTime.now(),
-        );
-        await _notifyStatusChange(
-          ref,
-          entryId: entryId,
-          status: 'in_water',
-          previousStatus: 'in_progress',
-        );
-        ref.invalidate(queueEntriesProvider);
-      } catch (_) {
-        // Best-effort; user can refresh manually if update fails.
-      } finally {
-        _scheduledStatusTimers.remove(entryId);
-        _inProgressPreviousStatuses.remove(entryId);
-      }
-    });
-
-    _scheduledStatusTimers[entryId] = timer;
-  }
-
-  Future<void> _scheduleMoveToCompleted(
-    WidgetRef ref,
-    String entryId,
-    int minutes,
-  ) async {
-    _cancelScheduledTransition(entryId);
-    late Timer timer;
-    timer = Timer(Duration(minutes: minutes), () async {
-      if (_scheduledStatusTimers[entryId] != timer) return;
-
-      final repository = ref.read(launchQueueRepositoryProvider);
-      try {
-        await repository.updateEntry(
-          entryId: entryId,
-          status: 'completed',
-          processedAt: DateTime.now(),
-        );
-        await _notifyStatusChange(
-          ref,
-          entryId: entryId,
-          status: 'completed',
-          previousStatus: 'in_progress',
-        );
-        ref.invalidate(queueEntriesProvider);
-      } catch (_) {
-        // Best-effort; user can refresh manually if update fails.
-      } finally {
-        _scheduledStatusTimers.remove(entryId);
-        _inProgressPreviousStatuses.remove(entryId);
-      }
-    });
-
-    _scheduledStatusTimers[entryId] = timer;
   }
 
   Future<void> _deleteEntry(
@@ -964,6 +891,7 @@ class QueueCrudPage extends ConsumerWidget {
         entryId: entry.id,
         status: 'completed',
         processedAt: DateTime.now(),
+        clearScheduledTransition: true,
       );
       unawaited(
         _notifyStatusChange(

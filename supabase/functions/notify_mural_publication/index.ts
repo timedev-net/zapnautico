@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.0';
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v2.8/mod.ts';
 
 import { corsHeaders } from '../_shared/cors.ts';
+import { persistNotifications } from '../_shared/notifications.ts';
 
 type Payload = {
   marina_id?: string;
@@ -250,6 +251,16 @@ serve(async (req) => {
       accessToken,
       projectId,
     });
+
+    await persistNotifications(
+      supabase,
+      Array.from(recipientIds).map((userId) => ({
+        userId,
+        title: notificationTitle,
+        body: composedBody.length === 0 ? notificationTitle : composedBody,
+        data: dataPayload,
+      })),
+    );
 
     return new Response(
       JSON.stringify({

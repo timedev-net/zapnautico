@@ -5,6 +5,8 @@ import '../../auth/application/auth_controller.dart';
 import '../../../core/push_notifications/push_navigation_intent.dart';
 import '../../mural/presentation/marina_wall_post_detail_page.dart';
 import '../../mural/presentation/mural_page.dart';
+import '../../notifications/presentation/notifications_page.dart';
+import '../../notifications/providers.dart';
 import '../../profile/presentation/profile_page.dart';
 import '../../queue/providers.dart';
 import '../../queue/presentation/queue_crud_page.dart';
@@ -19,7 +21,10 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  late final ProviderSubscription<PushNavigationIntent?> _pushIntentSubscription;
+  late final ProviderSubscription<PushNavigationIntent?>
+  _pushIntentSubscription;
+  late final ProviderSubscription<int> _tabSubscription;
+  late final AppLifecycleListener _lifecycleListener;
 
   @override
   void initState() {
@@ -40,16 +45,38 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         }
       },
     );
+
+    _tabSubscription = ref.listenManual<int>(homeTabIndexProvider, (
+      previous,
+      next,
+    ) {
+      if (next == homeTabHomeIndex) {
+        _refreshHomeState();
+      }
+    });
+
+    _lifecycleListener = AppLifecycleListener(
+      onStateChange: (state) {
+        if (state == AppLifecycleState.resumed) {
+          _refreshHomeState();
+          _refreshNotifications();
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
     _pushIntentSubscription.close();
+    _tabSubscription.close();
+    _lifecycleListener.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(notificationsRealtimeSyncProvider);
+    final pendingNotifications = ref.watch(pendingNotificationsCountProvider);
     final selectedIndex = ref.watch(homeTabIndexProvider);
     final pages = [
       const _HomePageConfig(
@@ -74,14 +101,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ),
     ];
 
-    final currentPage =
-        pages[selectedIndex.clamp(0, pages.length - 1).toInt()];
+    final currentPage = pages[selectedIndex.clamp(0, pages.length - 1).toInt()];
     final authController = ref.watch(authControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(currentPage.title),
         actions: [
+          _NotificationsAction(pendingNotifications: pendingNotifications),
           IconButton(
             tooltip: 'Sair',
             icon: const Icon(Icons.logout),
@@ -129,6 +156,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
+  void _refreshHomeState() {
+    ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
+    ref.invalidate(queueEntriesProvider);
+  }
+
+  void _refreshNotifications() {
+    ref.invalidate(pendingNotificationsCountProvider);
+    ref.invalidate(userNotificationsProvider);
+    ref.invalidate(notificationsRealtimeSyncProvider);
+  }
+
   Future<void> _goToMuralDetail(PushNavigationIntent intent) async {
     ref.read(homeTabIndexProvider.notifier).state = homeTabMuralIndex;
     if (!mounted) return;
@@ -155,4 +193,37 @@ class _HomePageConfig {
   final String title;
   final IconData icon;
   final Widget body;
+}
+
+class _NotificationsAction extends ConsumerWidget {
+  const _NotificationsAction({required this.pendingNotifications});
+
+  final AsyncValue<int> pendingNotifications;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = pendingNotifications.asData?.value ?? 0;
+    final isLoading = pendingNotifications.isLoading;
+    final icon = isLoading
+        ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Badge(
+            isLabelVisible: count > 0,
+            label: Text('$count'),
+            child: const Icon(Icons.notifications_none_outlined),
+          );
+
+    return IconButton(
+      tooltip: 'Notificações',
+      icon: icon,
+      onPressed: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const NotificationsPage()),
+        );
+      },
+    );
+  }
 }

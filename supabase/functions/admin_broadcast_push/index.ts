@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.0';
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v2.8/mod.ts';
 
 import { corsHeaders } from '../_shared/cors.ts';
+import { persistNotifications } from '../_shared/notifications.ts';
 
 type BroadcastPayload = {
   title?: string;
@@ -128,7 +129,7 @@ serve(async (req) => {
 
     const { data: tokens, error: tokensError } = await supabase
         .from('user_push_tokens')
-        .select('token');
+        .select('user_id, token');
 
     if (tokensError) {
       console.error('Erro ao carregar tokens de push', tokensError);
@@ -138,10 +139,18 @@ serve(async (req) => {
       );
     }
 
+    const recipientIds = new Set<string>();
     const validTokens = Array.from(
       new Set(
         (tokens ?? [])
-            .map((row) => row.token as string | null | undefined)
+            .map((row) => {
+              const token = row.token as string | null | undefined;
+              const userId = row.user_id as string | null | undefined;
+              if (userId) {
+                recipientIds.add(userId);
+              }
+              return token;
+            })
             .filter((token): token is string => Boolean(token?.trim())),
       ),
     );
@@ -208,6 +217,16 @@ serve(async (req) => {
       accessToken,
       projectId,
     });
+
+    await persistNotifications(
+      supabase,
+      Array.from(recipientIds).map((userId) => ({
+        userId,
+        title,
+        body,
+        data: dataPayload,
+      })),
+    );
 
     return new Response(
       JSON.stringify({

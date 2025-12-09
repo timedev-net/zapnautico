@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../boats/domain/boat.dart';
 import '../../boats/providers.dart';
@@ -29,6 +30,43 @@ final ownedBoatsLatestQueueEntriesProvider =
       final repository = ref.watch(launchQueueRepositoryProvider);
       return repository.fetchLatestEntriesForBoats(boatIds: ownedBoatIds);
     });
+
+/// Keeps the owner's boat buttons in sync with queue updates.
+final homeQueueRealtimeSyncProvider = Provider.autoDispose<void>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  final userId = ref.watch(userProvider)?.id;
+  if (userId == null || userId.isEmpty) return;
+
+  final channel = client.channel('realtime-home-queue');
+
+  void refresh() {
+    ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
+  }
+
+  for (final event in [
+    PostgresChangeEvent.insert,
+    PostgresChangeEvent.update,
+    PostgresChangeEvent.delete,
+  ]) {
+    channel.onPostgresChanges(
+      event: event,
+      schema: 'public',
+      table: 'boat_launch_queue',
+      callback: (_) => refresh(),
+    );
+  }
+
+  channel.subscribe();
+
+  ref.onDispose(() async {
+    try {
+      await channel.unsubscribe();
+    } catch (_) {}
+    try {
+      await client.removeChannel(channel);
+    } catch (_) {}
+  });
+});
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -65,6 +103,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(homeQueueRealtimeSyncProvider);
+
     final theme = Theme.of(context);
     final profilesAsync = ref.watch(currentUserProfilesProvider);
     final boatsAsync = ref.watch(boatsProvider);
@@ -273,6 +313,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         entryId: entry.id,
         status: 'cancelled',
         processedAt: DateTime.now(),
+        clearScheduledTransition: true,
       );
 
       ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
@@ -319,6 +360,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         entryId: entry.id,
         status: 'completed',
         processedAt: DateTime.now(),
+        clearScheduledTransition: true,
       );
 
       ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
