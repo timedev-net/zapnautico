@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -63,7 +64,23 @@ class PushTokenRegistrar {
     final granted = await _requestPermission();
     if (!granted) return;
 
-    final token = await FirebaseMessaging.instance.getToken();
+    String? token;
+    try {
+      token = await FirebaseMessaging.instance.getToken();
+    } on FirebaseException catch (error) {
+      if (error.code == 'apns-token-not-set') {
+        debugPrint(
+          'APNS token indisponível no momento; pulando registro de push.',
+        );
+        return;
+      }
+      debugPrint('Erro ao obter token do Firebase Messaging: $error');
+      return;
+    } catch (error) {
+      debugPrint('Erro ao obter token do Firebase Messaging: $error');
+      return;
+    }
+
     if (token == null || token.isEmpty) {
       debugPrint('Firebase Messaging não retornou token.');
       return;

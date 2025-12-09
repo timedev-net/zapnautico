@@ -157,7 +157,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _refreshHomeState() {
-    ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
+    ref.invalidate(ownedBoatsLatestQueueStreamProvider);
     ref.invalidate(queueEntriesProvider);
   }
 

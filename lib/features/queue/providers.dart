@@ -117,19 +117,19 @@ final queueEntriesProvider = StreamProvider<QueueEntriesState>((ref) async* {
     'cancelled',
   ];
 
-  var stream = client
+  final streamBuilder = client
       .from('boat_launch_queue_view')
-      .stream(primaryKey: ['id'])
-      .in_('status', statuses);
+      .stream(primaryKey: ['id']);
 
-  if (marinaFilter != null && marinaFilter.isNotEmpty) {
-    stream = stream.eq('marina_id', marinaFilter);
-  }
+  final stream = (marinaFilter != null && marinaFilter.isNotEmpty)
+      ? streamBuilder.eq('marina_id', marinaFilter)
+      : streamBuilder.inFilter('status', statuses);
 
   await for (final rows in stream) {
     final baseEntries = rows
         .cast<Map<String, dynamic>>()
         .map(LaunchQueueEntry.fromMap)
+        .where((entry) => statuses.contains(entry.status))
         .toList();
 
     Iterable<LaunchQueueEntry> filteredEntries = baseEntries;
