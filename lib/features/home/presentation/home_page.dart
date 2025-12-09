@@ -35,6 +35,13 @@ final ownedBoatsLatestQueueEntriesProvider =
 final homeQueueRealtimeSyncProvider = Provider.autoDispose<void>((ref) {
   final client = ref.watch(supabaseClientProvider);
   final userId = ref.watch(userProvider)?.id;
+  final boatsAsync = ref.watch(boatsProvider);
+  final boatIds = boatsAsync.asData?.value
+          .map((boat) => boat.id)
+          .where((id) => id.isNotEmpty)
+          .toList() ??
+      const <String>[];
+
   if (userId == null || userId.isEmpty) return;
 
   final channel = client.channel('realtime-home-queue');
@@ -43,17 +50,29 @@ final homeQueueRealtimeSyncProvider = Provider.autoDispose<void>((ref) {
     ref.invalidate(ownedBoatsLatestQueueEntriesProvider);
   }
 
-  for (final event in [
-    PostgresChangeEvent.insert,
-    PostgresChangeEvent.update,
-    PostgresChangeEvent.delete,
-  ]) {
-    channel.onPostgresChanges(
-      event: event,
-      schema: 'public',
-      table: 'boat_launch_queue',
-      callback: (_) => refresh(),
-    );
+  final filters = <String>[];
+  filters.add('requested_by=eq.$userId');
+  if (boatIds.isNotEmpty) {
+    filters.add('boat_id=in.(${boatIds.join(',')})');
+  }
+  if (filters.isEmpty) {
+    filters.add('');
+  }
+
+  for (final filter in filters) {
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+      PostgresChangeEvent.delete,
+    ]) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'boat_launch_queue',
+        filter: filter.isEmpty ? null : filter,
+        callback: (_) => refresh(),
+      );
+    }
   }
 
   channel.subscribe();
