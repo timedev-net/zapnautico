@@ -15,7 +15,6 @@ import '../../queue/presentation/marina_queue_dashboard_page.dart';
 import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 
-
 final ownedBoatsLatestQueueStreamProvider =
     StreamProvider<Map<String, LaunchQueueEntry>>((ref) async* {
       final boats = await ref.watch(boatsProvider.future);
@@ -38,13 +37,12 @@ final ownedBoatsLatestQueueStreamProvider =
           .inFilter('boat_id', ownedBoatIds);
 
       await for (final rows in stream) {
-        final entries = rows
-            .cast<Map<String, dynamic>>()
-            .map(LaunchQueueEntry.fromMap)
-            .toList()
-          ..sort(
-            (a, b) => b.requestedAt.compareTo(a.requestedAt),
-          );
+        final entries =
+            rows
+                .cast<Map<String, dynamic>>()
+                .map(LaunchQueueEntry.fromMap)
+                .toList()
+              ..sort((a, b) => b.requestedAt.compareTo(a.requestedAt));
 
         final latestByBoat = <String, LaunchQueueEntry>{};
         for (final entry in entries) {
@@ -89,9 +87,100 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
+  Future<bool> _shouldAskForFueling() async {
+    try {
+      final profiles = await ref.read(currentUserProfilesProvider.future);
+      return profiles.any(
+        (profile) =>
+            profile.profileSlug == 'proprietario' ||
+            profile.profileSlug == 'cotista',
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool?> _askToFuelBoat(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Deseja abastecer a embarcação?'),
+          content: const Text(
+            'Você pode aproveitar para solicitar o abastecimento junto com a descida.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Não'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sim, abastecer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<int?> _askFuelGallons(BuildContext context) async {
+    final formKey = GlobalKey<FormState>();
+    final controller = TextEditingController(text: '1');
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Quantos galões deseja abastecer?'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Quantidade',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              validator: (value) {
+                final parsed = int.tryParse(value?.trim() ?? '');
+                if (parsed == null || parsed <= 0) {
+                  return 'Informe um número maior que zero.';
+                }
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                final parsed = int.tryParse(controller.text.trim()) ?? 1;
+                Navigator.of(dialogContext).pop(parsed);
+              },
+              child: const Text('Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Defer disposal to next frame to avoid disposing while the dialog is closing.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
+    if (!mounted) return null;
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
-        final theme = Theme.of(context);
+    final theme = Theme.of(context);
     final profilesAsync = ref.watch(currentUserProfilesProvider);
     final boatsAsync = ref.watch(boatsProvider);
     final userId = ref.watch(userProvider)?.id;
@@ -154,7 +243,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const FinancialManagementPage(),
-                ),
+                  ),
                 ),
                 icon: const Icon(Icons.receipt_long),
                 label: const Text('Gestão financeira'),
@@ -194,27 +283,27 @@ class _HomePageState extends ConsumerState<HomePage> {
       List<Marina> marinas = const [];
       try {
         marinas = await ref.read(marinasProvider.future);
-          } catch (error) {
-            if (mounted) {
-              messenger.showSnackBar(
-                SnackBar(
-                  content: Text('Não foi possível carregar as marinas: $error'),
-                ),
-              );
-            }
-            return;
+      } catch (error) {
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Não foi possível carregar as marinas: $error'),
+            ),
+          );
+        }
+        return;
       }
 
       if (!mounted) return;
 
-          if (marinas.isEmpty) {
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Nenhuma marina disponível. Cadastre uma marina.'),
-              ),
-            );
-            return;
-          }
+      if (marinas.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Nenhuma marina disponível. Cadastre uma marina.'),
+          ),
+        );
+        return;
+      }
 
       if (!context.mounted) return;
 
@@ -237,24 +326,43 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     latest ??= latestEntry;
 
-      if (latest != null &&
-          latest.status != 'cancelled' &&
-          latest.status != 'completed') {
-        final statusLabel = _translateStatus(latest.status);
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Já existe um registro $statusLabel para esta embarcação.',
-            ),
+    if (latest != null &&
+        latest.status != 'cancelled' &&
+        latest.status != 'completed') {
+      final statusLabel = _translateStatus(latest.status);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Já existe um registro $statusLabel para esta embarcação.',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
+    }
 
+    int? fuelGallons;
+    if (await _shouldAskForFueling()) {
+      if (!mounted) return;
+      final wantsFuel = await _askToFuelBoat(context);
+      if (wantsFuel == true) {
+        if (!mounted) return;
+        final gallons = await _askFuelGallons(context);
+        if (gallons == null) {
+          return;
+        }
+        fuelGallons = gallons;
+      }
+    }
+
+    if (!mounted) return;
     setState(() => _boatActionInProgress.add(boat.id));
 
     try {
-      await repository.createEntry(marinaId: marinaId, boatId: boat.id);
+      await repository.createEntry(
+        marinaId: marinaId,
+        boatId: boat.id,
+        fuelGallons: fuelGallons,
+      );
 
       ref.invalidate(ownedBoatsLatestQueueStreamProvider);
       ref.invalidate(queueEntriesProvider);
@@ -460,17 +568,17 @@ class _OwnedBoatsSection extends StatelessWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Não foi possível carregar suas embarcações.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
+      error: (error, _) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Não foi possível carregar suas embarcações.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
             const SizedBox(height: 4),
             Text('$error', style: Theme.of(context).textTheme.bodySmall),
           ],
