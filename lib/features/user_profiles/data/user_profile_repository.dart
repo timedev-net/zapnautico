@@ -67,6 +67,13 @@ class UserProfileRepository {
     );
   }
 
+  Future<void> ensureVisitorProfile(String userId) async {
+    await _client.rpc(
+      'ensure_visitor_profile',
+      params: {'target_user': userId},
+    );
+  }
+
   Future<List<AppUserWithProfiles>> adminFetchUsersWithProfiles() async {
     final users = await adminListUsers();
     final assignments = await fetchAllAssignments();

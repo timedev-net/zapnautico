@@ -139,6 +139,7 @@ class LaunchQueueRepository {
     String? boatId,
     String? genericBoatName,
     String status = 'pending',
+    int? fuelGallons,
     List<XFile> photos = const [],
   }) async {
     final normalizedGenericName = genericBoatName?.trim();
@@ -168,6 +169,10 @@ class LaunchQueueRepository {
 
     if (hasGenericName) {
       payload['generic_boat_name'] = normalizedGenericName;
+    }
+
+    if (fuelGallons != null && fuelGallons > 0) {
+      payload['fuel_gallons'] = fuelGallons;
     }
 
     final response = await _client
@@ -301,11 +306,14 @@ class LaunchQueueRepository {
       throw ArgumentError('Informe um tempo valido em minutos.');
     }
 
-    await _client.rpc('schedule_launch_queue_transition', params: {
-      'entry_id': entryId,
-      'target_status': targetStatus,
-      'delay_minutes': delayMinutes,
-    });
+    await _client.rpc(
+      'schedule_launch_queue_transition',
+      params: {
+        'entry_id': entryId,
+        'target_status': targetStatus,
+        'delay_minutes': delayMinutes,
+      },
+    );
   }
 
   Future<Map<String, String>> _uploadPhoto({

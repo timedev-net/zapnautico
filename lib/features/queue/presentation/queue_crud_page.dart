@@ -14,6 +14,7 @@ import '../../boats/providers.dart';
 import '../../marinas/domain/marina.dart';
 import '../../marinas/providers.dart';
 import '../../user_profiles/domain/marina_roles.dart';
+import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 import '../data/launch_queue_repository.dart';
 import '../data/queue_notification_service.dart';
@@ -51,42 +52,48 @@ class QueueCrudPage extends ConsumerWidget {
     ref.watch(queueRealtimeSyncProvider);
 
     final marinas = marinasAsync.asData?.value ?? const <Marina>[];
-    final hasOwnerProfile = profilesAsync.maybeWhen(
-      data: (profiles) => profiles.any(
-        (profile) =>
-            profile.profileSlug == 'proprietario' ||
-            profile.profileSlug == 'cotista',
-      ),
-      orElse: () => false,
+    final profileList =
+        profilesAsync.asData?.value ?? const <UserProfileAssignment>[];
+    final hasOwnerProfile = profileList.any(
+      (profile) =>
+          profile.profileSlug == 'proprietario' ||
+          profile.profileSlug == 'cotista',
     );
-    final hasMarinaProfile = profilesAsync.maybeWhen(
-      data: (profiles) =>
-          hasMarinaRole(profiles),
-      orElse: () => false,
+    final hasMarinaProfile = hasMarinaRole(profileList);
+    final hasVisitorProfile = profileList.any(
+      (profile) => profile.profileSlug == 'visitante',
     );
+    final shouldShowNewEntryButton =
+        profileList.isNotEmpty && !hasVisitorProfile;
     final shouldRestrictOwnerView =
         hasOwnerProfile && !isAdmin && !hasMarinaProfile;
 
     return Scaffold(
-      appBar:
-          showAppBar ? AppBar(title: const Text('Fila de embarcações')) : null,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: isProcessing ? null : () => _openForm(context, ref),
-        icon: isProcessing
-            ? const SizedBox(
-                height: 18,
-                width: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.add),
-        label: const Text('Nova entrada'),
-      ),
+      appBar: showAppBar
+          ? AppBar(title: const Text('Fila de embarcações'))
+          : null,
+      floatingActionButton: shouldShowNewEntryButton
+          ? FloatingActionButton.extended(
+              onPressed: isProcessing ? null : () => _openForm(context, ref),
+              icon: isProcessing
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add),
+              label: const Text('Nova entrada'),
+            )
+          : null,
       body: entriesAsync.when(
         data: (state) {
-          final entries =
-              _filterEntriesForSelectedTab(state.entries, selectedStatusTab);
-          final Map<_QueueStatusTab, int> statusCounts =
-              _countEntriesByTab(state.entries);
+          final entries = _filterEntriesForSelectedTab(
+            state.entries,
+            selectedStatusTab,
+          );
+          final Map<_QueueStatusTab, int> statusCounts = _countEntriesByTab(
+            state.entries,
+          );
           String? selectedMarinaName;
           if (selectedMarinaId != null &&
               selectedMarinaId.isNotEmpty &&
@@ -119,8 +126,7 @@ class QueueCrudPage extends ConsumerWidget {
               ),
               if (!hasLockedMarinaFilter)
                 Padding(
-                  padding:
-                      EdgeInsets.fromLTRB(16, filterTopPadding, 16, 0),
+                  padding: EdgeInsets.fromLTRB(16, filterTopPadding, 16, 0),
                   child: _QueueMarinaFilter(
                     marinas: marinas,
                     selectedMarinaId: selectedMarinaId,
@@ -208,9 +214,8 @@ class QueueCrudPage extends ConsumerWidget {
       orElse: () => false,
     );
     final forcedMarinaId = ref.read(queueForcedMarinaIdProvider);
-    final lockMarinaSelection = hasMarinaProfile &&
-        forcedMarinaId != null &&
-        forcedMarinaId.isNotEmpty;
+    final lockMarinaSelection =
+        hasMarinaProfile && forcedMarinaId != null && forcedMarinaId.isNotEmpty;
 
     List<Marina> marinas;
     try {
@@ -260,8 +265,8 @@ class QueueCrudPage extends ConsumerWidget {
     final initialMarinaId = entry != null && entry.marinaId.isNotEmpty
         ? entry.marinaId
         : (forcedMarinaId?.isNotEmpty == true
-            ? forcedMarinaId
-            : selectedFilterMarina);
+              ? forcedMarinaId
+              : selectedFilterMarina);
 
     final result = await showDialog<_QueueEntryFormResult>(
       context: context,
@@ -361,9 +366,7 @@ class QueueCrudPage extends ConsumerWidget {
     if (entry.boatId.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registro sem embarcação vinculada.'),
-          ),
+          const SnackBar(content: Text('Registro sem embarcação vinculada.')),
         );
       }
       return null;
@@ -374,9 +377,7 @@ class QueueCrudPage extends ConsumerWidget {
       if (boat == null) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Embarcação não encontrada.'),
-            ),
+            const SnackBar(content: Text('Embarcação não encontrada.')),
           );
         }
         return null;
@@ -437,9 +438,7 @@ class QueueCrudPage extends ConsumerWidget {
 
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => QueueEntryGalleryPage(
-          photos: entry.queuePhotos,
-        ),
+        builder: (_) => QueueEntryGalleryPage(photos: entry.queuePhotos),
       ),
     );
   }
@@ -460,24 +459,24 @@ class QueueCrudPage extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.directions_boat_filled),
                   title: const Text('Ver detalhes da embarcação'),
-                  onTap: () => Navigator.of(sheetContext).pop(
-                    _MarinaEntryMenuAction.viewDetails,
-                  ),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_MarinaEntryMenuAction.viewDetails),
                 ),
               if (entry.hasQueuePhotos)
                 ListTile(
                   leading: const Icon(Icons.photo_library_outlined),
                   title: const Text('Ver fotos do registro'),
-                  onTap: () => Navigator.of(sheetContext).pop(
-                    _MarinaEntryMenuAction.viewPhotos,
-                  ),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_MarinaEntryMenuAction.viewPhotos),
                 ),
               ListTile(
                 leading: const Icon(Icons.cancel_outlined),
                 title: const Text('Cancelar'),
-                onTap: () => Navigator.of(sheetContext).pop(
-                  _MarinaEntryMenuAction.cancel,
-                ),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_MarinaEntryMenuAction.cancel),
               ),
               const SizedBox(height: 8),
             ],
@@ -948,9 +947,7 @@ List<LaunchQueueEntry> _filterEntriesForSelectedTab(
   }
 }
 
-Map<_QueueStatusTab, int> _countEntriesByTab(
-  List<LaunchQueueEntry> entries,
-) {
+Map<_QueueStatusTab, int> _countEntriesByTab(List<LaunchQueueEntry> entries) {
   final counts = <_QueueStatusTab, int>{
     _QueueStatusTab.pending: 0,
     _QueueStatusTab.inWater: 0,
@@ -962,12 +959,10 @@ Map<_QueueStatusTab, int> _countEntriesByTab(
     switch (entry.status) {
       case 'pending':
       case 'in_progress':
-        counts[_QueueStatusTab.pending] =
-            counts[_QueueStatusTab.pending]! + 1;
+        counts[_QueueStatusTab.pending] = counts[_QueueStatusTab.pending]! + 1;
         break;
       case 'in_water':
-        counts[_QueueStatusTab.inWater] =
-            counts[_QueueStatusTab.inWater]! + 1;
+        counts[_QueueStatusTab.inWater] = counts[_QueueStatusTab.inWater]! + 1;
         break;
       case 'completed':
         counts[_QueueStatusTab.completed] =
@@ -1051,23 +1046,20 @@ class _StatusCountChip extends StatelessWidget {
     return FilterChip(
       selected: selected,
       showCheckmark: false,
-      avatar: Icon(
-        icon,
-        size: 18,
-        color: selected ? foreground : borderColor,
-      ),
+      avatar: Icon(icon, size: 18, color: selected ? foreground : borderColor),
       label: Text('$label: $count'),
       onSelected: (_) => onPressed(),
       backgroundColor: background,
       selectedColor: background,
       side: BorderSide(
-        color:
-            selected ? borderColor : borderColor.withAlpha((0.6 * 255).round()),
+        color: selected
+            ? borderColor
+            : borderColor.withAlpha((0.6 * 255).round()),
       ),
-      labelStyle: Theme.of(context)
-          .textTheme
-          .bodyMedium
-          ?.copyWith(color: foreground, fontWeight: FontWeight.w700),
+      labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        color: foreground,
+        fontWeight: FontWeight.w700,
+      ),
     );
   }
 }
@@ -1234,16 +1226,21 @@ class _QueueEntriesList extends StatelessWidget {
               currentUserId!.isEmpty ||
               entry.requestedBy != currentUserId;
           final isMasked = maskOtherOwnerBoats && isDifferentUserRequest;
-          final canOpenGallery = onOpenBoatGallery != null &&
+          final canOpenGallery =
+              onOpenBoatGallery != null &&
               entry.boatId.isNotEmpty &&
               !isMasked &&
               entry.userCanSeeDetails;
-          final canOpenQueueGallery = onOpenQueueEntryPhotos != null &&
+          final canOpenQueueGallery =
+              onOpenQueueEntryPhotos != null &&
               entry.hasQueuePhotos &&
               !isMasked;
-          final canOpenMenu = onOpenEntryMenu != null &&
+          final canOpenMenu =
+              onOpenEntryMenu != null &&
               !isMasked &&
-              (entry.boatId.isNotEmpty ? entry.userCanSeeDetails : entry.isMarinaUser);
+              (entry.boatId.isNotEmpty
+                  ? entry.userCanSeeDetails
+                  : entry.isMarinaUser);
           final subtitleLines = _buildSubtitleLines(entry, masked: isMasked);
           final cardColor = _cardColor(entry.status, theme);
           final trailingChildren = <Widget>[];
@@ -1255,6 +1252,19 @@ class _QueueEntriesList extends StatelessWidget {
             avatarTap = () => onOpenQueueEntryPhotos!(entry);
           } else {
             avatarTap = null;
+          }
+
+          final canShowFuelBadge =
+              entry.hasFuelRequest &&
+              !isMasked &&
+              ((currentUserId != null &&
+                      currentUserId!.isNotEmpty &&
+                      entry.requestedBy == currentUserId) ||
+                  entry.isOwnBoat ||
+                  entry.isMarinaUser);
+
+          if (canShowFuelBadge && entry.fuelGallons != null) {
+            trailingChildren.add(_buildFuelBadge(context, entry.fuelGallons!));
           }
 
           if (showRaiseButton &&
@@ -1371,7 +1381,9 @@ class _QueueEntriesList extends StatelessWidget {
       if (entry.processedAt != null &&
           entry.status != 'pending' &&
           entry.status != 'in_progress') {
-        lines.add('Atualizado: ${dateFormat.format(entry.processedAt!.toLocal())}');
+        lines.add(
+          'Atualizado: ${dateFormat.format(entry.processedAt!.toLocal())}',
+        );
       }
       return lines;
     }
@@ -1385,7 +1397,9 @@ class _QueueEntriesList extends StatelessWidget {
     if (entry.processedAt != null &&
         entry.status != 'pending' &&
         entry.status != 'in_progress') {
-      lines.add('Atualizado: ${dateFormat.format(entry.processedAt!.toLocal())}');
+      lines.add(
+        'Atualizado: ${dateFormat.format(entry.processedAt!.toLocal())}',
+      );
     }
 
     if (entry.isGenericEntry) {
@@ -1411,6 +1425,34 @@ class _QueueEntriesList extends StatelessWidget {
     }
 
     return lines;
+  }
+
+  Widget _buildFuelBadge(BuildContext context, int gallons) {
+    final color = Colors.red.shade600;
+    final background = Colors.red.shade50;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.local_gas_station, color: color, size: 18),
+          const SizedBox(width: 6),
+          Text(
+            '$gallons gal',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Color? _cardColor(String status, ThemeData theme) {
@@ -1861,7 +1903,9 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
       setState(() => _selectedPhotos.addAll(toAdd));
 
       if (files.length > remainingSlots) {
-        _showMessage('Limite de 5 fotos atingido. Apenas as primeiras foram adicionadas.');
+        _showMessage(
+          'Limite de 5 fotos atingido. Apenas as primeiras foram adicionadas.',
+        );
       }
     } catch (error) {
       _showMessage('Erro ao selecionar fotos: $error');
@@ -1899,9 +1943,9 @@ class _QueueEntryFormDialogState extends State<_QueueEntryFormDialog> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _submit() {
@@ -1979,56 +2023,53 @@ class _QueueEntryPhotosField extends StatelessWidget {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: List.generate(
-              photos.length,
-              (index) {
-                final file = photos[index];
-                return Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: FutureBuilder<Uint8List>(
-                        future: file.readAsBytes(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasData) {
-                            return Image.memory(
-                              snapshot.data!,
-                              width: 88,
-                              height: 88,
-                              fit: BoxFit.cover,
-                            );
-                          }
-                          return Container(
+            children: List.generate(photos.length, (index) {
+              final file = photos[index];
+              return Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: FutureBuilder<Uint8List>(
+                      future: file.readAsBytes(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData) {
+                          return Image.memory(
+                            snapshot.data!,
                             width: 88,
                             height: 88,
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            alignment: Alignment.center,
-                            child: const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
+                            fit: BoxFit.cover,
                           );
-                        },
-                      ),
+                        }
+                        return Container(
+                          width: 88,
+                          height: 88,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      },
                     ),
-                    Positioned(
-                      top: -8,
-                      right: -8,
-                      child: IconButton(
-                        iconSize: 20,
-                        visualDensity: VisualDensity.compact,
-                        style: IconButton.styleFrom(
-                          backgroundColor: theme.colorScheme.surface,
-                        ),
-                        icon: const Icon(Icons.close),
-                        onPressed: () => onRemove(index),
+                  ),
+                  Positioned(
+                    top: -8,
+                    right: -8,
+                    child: IconButton(
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        backgroundColor: theme.colorScheme.surface,
                       ),
+                      icon: const Icon(Icons.close),
+                      onPressed: () => onRemove(index),
                     ),
-                  ],
-                );
-              },
-            ),
+                  ),
+                ],
+              );
+            }),
           ),
       ],
     );

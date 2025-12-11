@@ -13,6 +13,7 @@ class LaunchQueueEntry {
     required this.requestedAt,
     this.processedAt,
     required this.queuePosition,
+    this.fuelGallons,
     this.boatName,
     this.genericBoatName,
     this.visibleBoatName,
@@ -36,6 +37,7 @@ class LaunchQueueEntry {
   final DateTime requestedAt;
   final DateTime? processedAt;
   final int queuePosition;
+  final int? fuelGallons;
   final String? visibleBoatName;
   final String? visibleOwnerName;
   final String? boatPhotoUrl;
@@ -47,10 +49,11 @@ class LaunchQueueEntry {
 
   bool get hasBoatPhoto => boatPhotoUrl != null && boatPhotoUrl!.isNotEmpty;
 
-  bool get hasQueuePhotos =>
-      queuePhotos.any((photo) => photo.hasUrl);
+  bool get hasQueuePhotos => queuePhotos.any((photo) => photo.hasUrl);
 
   bool get hasMarina => marinaId.isNotEmpty;
+
+  bool get hasFuelRequest => fuelGallons != null && fuelGallons! > 0;
 
   LaunchQueuePhoto? get primaryQueuePhoto {
     for (final photo in queuePhotos) {
@@ -105,6 +108,7 @@ class LaunchQueueEntry {
       requestedAt: requestedAt,
       processedAt: _parseNullableDateTime(data['processed_at']),
       queuePosition: queuePosition,
+      fuelGallons: _parseNullableInt(data['fuel_gallons']),
       boatName: data['boat_name'] as String?,
       genericBoatName: data['generic_boat_name'] as String?,
       visibleBoatName: data['visible_boat_name'] as String?,
@@ -129,6 +133,7 @@ class LaunchQueueEntry {
       requestedAt: requestedAt,
       processedAt: processedAt,
       queuePosition: queuePosition,
+      fuelGallons: fuelGallons,
       boatName: boatName,
       genericBoatName: genericBoatName,
       visibleBoatName: visibleBoatName,
@@ -158,6 +163,14 @@ class LaunchQueueEntry {
     if (value is DateTime) return value;
     if (value is String) return DateTime.tryParse(value);
     if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    return null;
+  }
+
+  static int? _parseNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
     return null;
   }
 
