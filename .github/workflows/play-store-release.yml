@@ -1,0 +1,84 @@
+name: Play Store Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PLAY_TRACK: internal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Fastlane
+        run: sudo gem install fastlane -NV
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Configure local.properties
+        run: |
+          SDK_DIR=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          cat > android/local.properties <<EOF
+          sdk.dir=$SDK_DIR
+          flutter.sdk=$FLUTTER_ROOT
+          EOF
+
+      - name: Prepare Play service account
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON_BASE64 }}
+        run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON_BASE64" ]; then
+            echo "PLAY_SERVICE_ACCOUNT_JSON_BASE64 não configurado." >&2
+            exit 1
+          fi
+          PLAY_JSON=$(mktemp /tmp/play-XXXX.json)
+          echo "$PLAY_SERVICE_ACCOUNT_JSON_BASE64" | base64 --decode > "$PLAY_JSON"
+          echo "PLAY_SERVICE_ACCOUNT_JSON=$PLAY_JSON" >> $GITHUB_ENV
+
+      - name: Prepare Android keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=""
+          for var in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!var}" ]; then missing="$missing $var"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Variáveis ausentes:$missing" >&2
+            exit 1
+          fi
+          KS_FILE=$(mktemp /tmp/keystore-XXXX.jks)
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KS_FILE"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$KS_FILE"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> $GITHUB_ENV
+
+      - name: Build and publish
+        working-directory: android
+        run: fastlane android deploy

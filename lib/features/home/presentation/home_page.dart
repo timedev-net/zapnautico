@@ -15,7 +15,6 @@ import '../../queue/presentation/marina_queue_dashboard_page.dart';
 import '../../user_profiles/domain/profile_models.dart';
 import '../../user_profiles/providers.dart';
 
-
 final ownedBoatsLatestQueueStreamProvider =
     StreamProvider<Map<String, LaunchQueueEntry>>((ref) async* {
       final boats = await ref.watch(boatsProvider.future);
@@ -38,13 +37,12 @@ final ownedBoatsLatestQueueStreamProvider =
           .inFilter('boat_id', ownedBoatIds);
 
       await for (final rows in stream) {
-        final entries = rows
-            .cast<Map<String, dynamic>>()
-            .map(LaunchQueueEntry.fromMap)
-            .toList()
-          ..sort(
-            (a, b) => b.requestedAt.compareTo(a.requestedAt),
-          );
+        final entries =
+            rows
+                .cast<Map<String, dynamic>>()
+                .map(LaunchQueueEntry.fromMap)
+                .toList()
+              ..sort((a, b) => b.requestedAt.compareTo(a.requestedAt));
 
         final latestByBoat = <String, LaunchQueueEntry>{};
         for (final entry in entries) {
@@ -91,7 +89,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-        final theme = Theme.of(context);
+    final theme = Theme.of(context);
     final profilesAsync = ref.watch(currentUserProfilesProvider);
     final boatsAsync = ref.watch(boatsProvider);
     final userId = ref.watch(userProvider)?.id;
@@ -145,7 +143,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 onPressed: () =>
                     _openMarinaDashboard(context, marinaManagerProfile!),
                 icon: const Icon(Icons.analytics_outlined),
-                label: const Text('Dashboard da marina'),
+                label: const Text('Dashboard'),
               ),
               const SizedBox(height: 12),
             ],
@@ -154,7 +152,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const FinancialManagementPage(),
-                ),
+                  ),
                 ),
                 icon: const Icon(Icons.receipt_long),
                 label: const Text('Gestão financeira'),
@@ -194,27 +192,27 @@ class _HomePageState extends ConsumerState<HomePage> {
       List<Marina> marinas = const [];
       try {
         marinas = await ref.read(marinasProvider.future);
-          } catch (error) {
-            if (mounted) {
-              messenger.showSnackBar(
-                SnackBar(
-                  content: Text('Não foi possível carregar as marinas: $error'),
-                ),
-              );
-            }
-            return;
+      } catch (error) {
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Não foi possível carregar as marinas: $error'),
+            ),
+          );
+        }
+        return;
       }
 
       if (!mounted) return;
 
-          if (marinas.isEmpty) {
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Nenhuma marina disponível. Cadastre uma marina.'),
-              ),
-            );
-            return;
-          }
+      if (marinas.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Nenhuma marina disponível. Cadastre uma marina.'),
+          ),
+        );
+        return;
+      }
 
       if (!context.mounted) return;
 
@@ -237,19 +235,19 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     latest ??= latestEntry;
 
-      if (latest != null &&
-          latest.status != 'cancelled' &&
-          latest.status != 'completed') {
-        final statusLabel = _translateStatus(latest.status);
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Já existe um registro $statusLabel para esta embarcação.',
-            ),
+    if (latest != null &&
+        latest.status != 'cancelled' &&
+        latest.status != 'completed') {
+      final statusLabel = _translateStatus(latest.status);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Já existe um registro $statusLabel para esta embarcação.',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
+    }
 
     setState(() => _boatActionInProgress.add(boat.id));
 
@@ -460,17 +458,17 @@ class _OwnedBoatsSection extends StatelessWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Não foi possível carregar suas embarcações.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
+      error: (error, _) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Não foi possível carregar suas embarcações.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
             const SizedBox(height: 4),
             Text('$error', style: Theme.of(context).textTheme.bodySmall),
           ],

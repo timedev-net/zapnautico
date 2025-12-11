@@ -165,7 +165,7 @@ class _HeaderSection extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Acompanhe avisos, eventos e campanhas publicados por cada marina.',
+                'Acompanhe avisos, eventos e campanhas',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -241,7 +241,9 @@ class _MuralCard extends StatelessWidget {
                   post.imageUrl!,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     child: const Center(child: Icon(Icons.broken_image)),
                   ),
                 ),
@@ -254,7 +256,9 @@ class _MuralCard extends StatelessWidget {
                   Row(
                     children: [
                       Chip(
-                        label: Text(muralPostTypeLabels[post.type] ?? post.type),
+                        label: Text(
+                          muralPostTypeLabels[post.type] ?? post.type,
+                        ),
                         backgroundColor: _typeColor(context, post.type),
                       ),
                       const SizedBox(width: 8),
@@ -273,9 +277,9 @@ class _MuralCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     post.title,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -299,8 +303,9 @@ class _MuralCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        DateFormat('dd/MM/yyyy')
-                            .format(post.createdAt.toLocal()),
+                        DateFormat(
+                          'dd/MM/yyyy',
+                        ).format(post.createdAt.toLocal()),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],

@@ -4,6 +4,7 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
+    id("com.github.triplet.play")
 }
 
 android {
@@ -30,15 +31,64 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath =
+                System.getenv("ANDROID_KEYSTORE_PATH")
+                    ?: project.findProperty("ANDROID_KEYSTORE_PATH") as? String
+            val keystorePassword =
+                System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                    ?: project.findProperty("ANDROID_KEYSTORE_PASSWORD") as? String
+            val keyAliasValue =
+                System.getenv("ANDROID_KEY_ALIAS")
+                    ?: project.findProperty("ANDROID_KEY_ALIAS") as? String
+            val keyPasswordValue =
+                System.getenv("ANDROID_KEY_PASSWORD")
+                    ?: project.findProperty("ANDROID_KEY_PASSWORD") as? String
+
+            val hasReleaseKeystore = listOf(
+                keystorePath,
+                keystorePassword,
+                keyAliasValue,
+                keyPasswordValue,
+            ).all { !it.isNullOrBlank() }
+
+            if (hasReleaseKeystore) {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Falls back to the debug key locally if release signing variables are missing.
+            signingConfig = signingConfigs
+                .findByName("release")
+                ?.takeIf { it.storeFile != null }
+                ?: signingConfigs.getByName("debug")
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+play {
+    val serviceAccountPath =
+        System.getenv("PLAY_SERVICE_ACCOUNT_JSON")
+            ?: project.findProperty("PLAY_SERVICE_ACCOUNT_JSON") as? String
+    if (serviceAccountPath != null) {
+        serviceAccountCredentials.set(file(serviceAccountPath))
+    }
+
+    track.set(
+        System.getenv("PLAY_TRACK")
+            ?: project.findProperty("PLAY_TRACK") as? String
+            ?: "internal",
+    )
+    defaultToAppBundles.set(true)
 }
